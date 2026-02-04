@@ -5,8 +5,6 @@ const app = express();
 const SenderBook = require("./models/SenderAddressBook");
 const cors = require("cors");
 const mongoose = require("mongoose");
-const mongo_uri =
-  "mongodb+srv://vivekkaushik2005:0OShH2EJiRwMSt4m@cluster0.vaqwvzd.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
 const Parcel2 = require("./models/parcel");
 const Locker = require("./models/locker");
 const User = require("./models/user");
@@ -20,6 +18,7 @@ const Razorpay = require("razorpay");
 const crypto = require("crypto");
 const { sendSMS } = require("./smartping.js");
 require("dotenv").config();
+const mongo_uri = process.env.MONGOURI
 const twilio = require("twilio");
 const {
   TWILIO_ACCOUNT_SID,
@@ -427,7 +426,9 @@ app.post("/api/locker/unlock-code", express.json(), async (req, res) => {
 
 app.post("/api/locker/scan", express.json(), async (req, res) => {
   try {
+    console.log("sathvik");
     const { accessCode } = req.body;
+    console.log(accessCode);
     if (!accessCode || accessCode.length !== 6) {
       return res.status(400).json({ success: false, message: "Invalid code" });
     }
