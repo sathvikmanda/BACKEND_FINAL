@@ -31,7 +31,7 @@ module.exports = async function handleDropFlow(
       };
     }
 
-    const locker = await Locker.findOne({ lockerId: parcel.lockerId });
+    const locker = await Locker.findOne({ lockerId: "L00002" });
 
     if (!locker) {
       return {

@@ -22,7 +22,7 @@ const mongo_uri = process.env.MONGOURI
 const twilio = require("twilio");
 const {
   TWILIO_ACCOUNT_SID,
-  TWILIO_AUTH_TOKEN,
+  TWILIO_AUTH_TOKEN,                                                         
   TWILIO_VERIFY_SERVICE_SID,
   TWILIO_WHATSAPP_VERIFY_SID,
 } = process.env;
@@ -990,6 +990,7 @@ app.post("/terminal/authdropoff", async (req, res) => {
 
 app.post("/delivery/dropoff", async (req, res) => {
   try {
+    console.Console.log("?h/utryuio")
     const {
       recipientPhone,
       deliveryPhone,
@@ -1040,7 +1041,7 @@ app.post("/delivery/dropoff", async (req, res) => {
     // ================= AGENT VALIDATION =================
 
     const agent = await DeliveryAgent.findOne({
-      phone: Number(deliveryPhone),
+      phone: String(deliveryPhone),
       partner: partnerId,
     });
 
