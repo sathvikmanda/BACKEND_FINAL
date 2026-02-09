@@ -89,7 +89,7 @@ module.exports = async function handlePickupFlow(
     if (parcel.status === "overstay") {
       let amount = parcel.billing.amountAccrued || 0;
 
-      if (!amount) {
+      if (!amount || amount === 0) {
         const diff = now - parcel.expiresAt;
         const hours = Math.ceil(diff / (1000 * 60 * 60));
         amount = hours * RATE_BY_SIZE[parcel.size];
@@ -125,7 +125,8 @@ module.exports = async function handlePickupFlow(
           body: {
             success: false,
             paymentRequired: true,
-            amount
+            amount,
+            parcelId : `${parcel._id}`
           }
         };
       }

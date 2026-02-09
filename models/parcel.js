@@ -44,6 +44,10 @@ const ParcelSchema = new mongoose.Schema({
   type: Boolean,
   default: false
 },
+isDropoff:{
+  type : Boolean,
+  default : false
+},
 razorpayPaymentLink: { type: String },
 paymentStatus: { type: String, default: "pending" },
 
@@ -145,6 +149,25 @@ delivery_address: String,
 delivery_city: String,
 delivery_state: String,
 delivery_pincode: String,
+
+// =======================
+// COURIER / PARTNER LINKS
+// =======================
+
+partner: {
+  type: mongoose.Schema.Types.ObjectId,
+  ref: "Partner",
+  index: true,
+  default: null
+},
+
+deliveryAgent: {
+  type: mongoose.Schema.Types.ObjectId,
+  ref: "DeliveryAgent",
+  index: true,
+  default: null
+},
+
 
 
 

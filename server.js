@@ -413,8 +413,13 @@ app.post("/api/locker/unlock-code", express.json(), async (req, res) => {
       result = await handleModifyFlow(accessCode, deps);
     } else if (flow === "PARCEL") {
       result = await handleParcelFlow(accessCode, deps);
+    } else if (flow === "DELIVERY_PICKUP") {
+      result = await handleDeliveryPickupFlow(accessCode,deps);
     } else {
-      return res.status(404).json({ success: false, message: "Invalid code" });
+      return res.status(404).json({
+        success: false,
+        message: "Invalid code",
+      });
     }
 
     return res.status(result.status).json(result.body);
@@ -988,95 +993,156 @@ app.post("/terminal/authdropoff", async (req, res) => {
   }
 });
 
-app.post("/delivery/dropoff", async (req, res) => {
+app.post("/api/locker/:lockerId/click", async (req, res) => {
+  const { service } = req.body; // "store" | "send" | "receive"
+  const { lockerId } = req.params;
+
+  let fieldToInc = null;
+
+  if (service === "store") fieldToInc = "stats.storeClicks";
+  if (service === "send") fieldToInc = "stats.sendClicks";
+  if (service === "drop") fieldToInc = "stats.dropClicks";
+
+  if (!fieldToInc) {
+    return res.status(400).json({ success: false, message: "Invalid service" });
+  }
+
+  await Locker.updateOne(
+    { lockerId },
+    { $inc: { [fieldToInc]: 1 } }
+  );
+  console.log("UPDATED");
+
+  res.json({ success: true });
+});
+
+const { unlockCompartment } = require("./services/locker/lockerHardware.js")
+
+app.post("/delivery/dropoff", async (req,res) => {
   try {
-    console.Console.log("?h/utryuio")
-    const {
-      recipientPhone,
-      deliveryPhone,
-      partnerId, // 🔥 NEW
-      size,
-      hours,
-      isDelivery,
-    } = req.body;
+    console.log("📦 dropoff hit");
 
-    const PRICES = { small: 5, medium: 10, large: 20 };
+    const { recipientPhone, deliveryPhone, partnerId, size, hours } = req.body;
+    console.log(req.body)
+    const SIZE_ALLOWED = ["small", "medium", "large"];
 
-    // ================= VALIDATIONS =================
+    // ================= BASIC VALIDATION =================
 
     if (!partnerId) {
-      return res.status(400).json({
-        success: false,
-        error: "partnerId is required",
-      });
+      return res
+        .status(400)
+        .json({ success: false, error: "partnerId required" });
     }
 
-    if (!PRICES[size]) {
+    if (!SIZE_ALLOWED.includes(size)) {
       return res.status(400).json({ error: "Invalid size" });
     }
 
-    const hrs = Number(hours);
-    if (!Number.isInteger(hrs) || hrs < 1 || hrs > 72) {
-      return res.status(400).json({ error: "Invalid hours" });
-    }
-
     if (!/^[6-9]\d{9}$/.test(recipientPhone)) {
-      return res.status(400).json({ error: "Invalid recipient phone number" });
+      return res.status(400).json({ error: "Invalid recipient phone" });
     }
 
     if (!/^[6-9]\d{9}$/.test(deliveryPhone)) {
-      return res.status(400).json({ error: "Invalid delivery phone number" });
+      return res.status(400).json({ error: "Invalid delivery phone" });
     }
 
-    // ================= PARTNER VALIDATION =================
+    // const hrs = Number(hours);
+    // if (!Number.isInteger(hrs) || hrs < 1) {
+    //   return res.status(400).json({ error: "Invalid hours" });
+    // }
+
+    // ================= PARTNER =================
 
     const partner = await Partner.findById(partnerId);
     if (!partner || !partner.isActive) {
       return res.status(403).json({
-        success: false,
-        error: "Invalid or inactive courier partner",
+        error: "Invalid or inactive partner",
       });
     }
+    const hrs = Number(partner.maxStorageHours);
 
-    // ================= AGENT VALIDATION =================
+if (!Number.isFinite(hrs) || hrs <= 0) {
+  return res.status(400).json({
+    error: "Partner maxStorageHours invalid"
+  });
+}
+console.log("HOURS:", hrs);
+
+
+
+    // if (hrs > partner.maxStorageHours) {
+    //   return res.status(400).json({
+    //     error: `Max allowed is ${partner.maxStorageHours} hours`,
+    //   });
+    // }
+
+    // ================= AGENT =================
 
     const agent = await DeliveryAgent.findOne({
-      phone: String(deliveryPhone),
+      phone: deliveryPhone,
       partner: partnerId,
     });
 
     if (!agent) {
       return res.status(403).json({
-        success: false,
-        error: "Delivery agent not associated with this courier",
+        error: "Agent not linked to this partner",
       });
     }
 
     // ================= COST =================
 
-    const total = PRICES[size] * hrs;
+    const rate = partner.billing?.hourlyRate || 10;
+    const total = rate * hrs;
 
     // ================= PARCEL ID =================
 
     let customId;
-    let exists = true;
-
-    while (exists) {
-      customId = "P" + Math.random().toString(36).substring(2, 7).toUpperCase();
-      exists = await Parcel2.exists({ customId });
+    while (true) {
+      customId = "P" + Math.random().toString(36).slice(2, 7).toUpperCase();
+      const exists = await Parcel2.exists({ customId });
+      if (!exists) break;
     }
 
     const createdAt = new Date();
     const expiresAt = new Date(createdAt.getTime() + hrs * 3600000);
+
+    // ================= LOCKER ASSIGNMENT =================
+
+    const locker = await Locker.findOne({ lockerId: "L00002" });
+    if (!locker) {
+      return res.status(500).json({ error: "Locker not found" });
+    }
+
+    const compartment = locker.compartments.find(
+      (c) => c.size === size && !c.isBooked,
+    );
+    if (!compartment) {
+      return res.status(409).json({
+        error: "No free compartment",
+      });
+    }
+      const hw = await unlockCompartment({
+      sendUnlock,
+      checkLockerStatus,
+      compartmentId: compartment.compartmentId
+    });
+if (!hw.ok) {
+  return res.status(504).json({
+    success: false,
+    message: "Compartment did not unlock",
+    details: hw
+  });
+}
 
     // ================= CREATE PARCEL =================
 
     const parcel = await Parcel2.create({
       senderPhone: deliveryPhone,
       receiverPhone: recipientPhone,
-      partner: partnerId, // 🔥 STORE COURIER
+      partner: partnerId,
+      deliveryAgent: agent._id,
       size,
-      lockerId: lockerID,
+      lockerId: locker.lockerId,
       hours: hrs,
       terminal_store: true,
       accessCode: Math.floor(100000 + Math.random() * 900000).toString(),
@@ -1088,73 +1154,230 @@ app.post("/delivery/dropoff", async (req, res) => {
       paymentStatus: "pending",
     });
 
-    // ================= LOCKER ASSIGNMENT =================
+    // ================= MARK LOCKER =================
 
-    try {
-      const locker = await Locker.findOne({ lockerId: "L00002" });
-      if (!locker) throw new Error("Locker not found");
+    compartment.isBooked = true;
+    compartment.currentParcelId = parcel._id;
+    await locker.save();
 
-      const compartment = locker.compartments.find(
-        (c) => c.size === parcel.size && !c.isBooked,
-      );
-      if (!compartment) throw new Error("No free compartment");
-
-      let addr = 0x00;
-      let lockNum = parseInt(compartment.compartmentId);
-      if (lockNum > 11) {
-        addr = 0x01;
-        lockNum -= 12;
-      }
-
-      await sendUnlock(lockNum, addr);
-
-      compartment.isBooked = true;
-      compartment.currentParcelId = parcel._id;
-
-      await locker.save();
-
-      parcel.lockerId = locker.lockerId;
-      parcel.compartmentId = compartment.compartmentId;
-    } catch (err) {
-      console.error("⚠️ Locker allocation failed:", err.message);
-    }
-
+    parcel.compartmentId = compartment.compartmentId;
     await parcel.save();
+
+    // ================= LINK TO PARTNER =================
+
+    await Partner.findByIdAndUpdate(partnerId, {
+      $push: { parcels: parcel._id },
+    });
+
+    // ================= AGENT STATS =================
+
+    await DeliveryAgent.findByIdAndUpdate(agent._id, {
+      $inc: { totalDrops: 1 },
+    });
 
     // ================= NOTIFY =================
 
-    await client.messages.create({
-      to: `whatsapp:+91${parcel.receiverPhone}`,
-      from: "whatsapp:+15558076515",
-      contentSid: "HX4200777a18b1135e502d60b796efe670",
-      contentVariables: JSON.stringify({
-        1: parcel.receiverName,
-        2: parcel.senderName,
-        3: `mobile/incoming/${parcel.customId}/qr`,
-        4: `dir/?api=1&destination=${parcel.lockerLat},${parcel.lockerLng}`,
-      }),
-    });
 
     // ================= RESPONSE =================
 
     return res.json({
       success: true,
+      customId: parcel.customId,
       accessCode: parcel.accessCode,
-      lockerId: parcel.lockerId ?? null,
-      compartmentId: parcel.compartmentId ?? null,
+      lockerId: parcel.lockerId,
+      compartmentId: parcel.compartmentId,
+      cost: total,
       partner: {
         id: partner._id,
         name: partner.companyName,
       },
     });
   } catch (err) {
-    console.error("❌ delivery dropoff error:", err);
+    console.error("❌ dropoff error:", err);
     return res.status(500).json({
       success: false,
       error: "Server error",
     });
   }
 });
+
+app.post("/api/overstay/payment/verify", async (req, res) => {
+  try {
+    const {
+      razorpay_order_id,
+      razorpay_payment_id,
+      razorpay_signature,
+      parcelId,
+    } = req.body;
+
+    const parcel = await Parcel2.findById(parcelId);
+
+    if (!parcel) {
+      return res.json({ success: false });
+    }
+
+    // 🔐 Verify signature
+    const body = razorpay_order_id + "|" + razorpay_payment_id;
+    const expectedSignature = crypto
+      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+      .update(body)
+      .digest("hex");
+
+    if (expectedSignature !== razorpay_signature) {
+      return res.json({ success: false });
+    }
+
+    // ✅ Mark payment success
+
+    const locker = await Locker.findOne({ lockerId: parcel.lockerId });
+
+    const compartment = locker.compartments.find(
+      (c) => c.compartmentId === parcel.compartmentId
+    );
+    let addr = 0x00;
+    let lockNum = parseInt(compartment.compartmentId);
+    if (lockNum > 11) {
+      addr = 0x01;
+      lockNum -= 12;
+    }
+
+    const sent = await sendUnlock(lockNum, addr);
+    if (!sent) {
+      return res.status(502).json({ success: false, message: "Unlock failed" });
+    }
+
+    await wait(500);
+    const hwStatus = await checkLockerStatus(addr, lockNum, 2000);
+    if (hwStatus !== "Unlocked") {
+      return res
+        .status(504)
+        .json({ success: false, message: "Unlock timeout" });
+    }
+    compartment.isBooked = false;
+    compartment.currentParcelId = null;
+    await locker.save();
+    parcel.status = "picked_with_overstay";
+    await parcel.save();
+
+    res.json({
+      success: true,
+      accessCode: parcel.accessCode,
+      redirect: "/",
+    });
+  } catch (err) {
+    console.error("Verify error:", err);
+    res.status(500).json({ success: false });
+  }
+});
+
+
+
+app.post("/personal/dropoff",async(req,res)=>{
+  try{
+   console.log("📦 dropoff hit");
+
+    const { recipientPhone, deliveryPhone, size, hours } = req.body;
+
+    const SIZE_ALLOWED = ["small", "medium", "large"];
+
+    if (!SIZE_ALLOWED.includes(size)) {
+      return res.status(400).json({ error: "Invalid size" });
+    }
+
+    if (!/^[6-9]\d{9}$/.test(recipientPhone)) {
+      return res.status(400).json({ error: "Invalid recipient phone" });
+    }
+
+    if (!/^[6-9]\d{9}$/.test(deliveryPhone)) {
+      return res.status(400).json({ error: "Invalid delivery phone" });
+    }
+
+        const hrs = Number(hours);
+    if (!Number.isInteger(hrs) || hrs < 1) {
+      return res.status(400).json({ error: "Invalid hours" });
+    }
+
+       let customId;
+    while (true) {
+      customId = "P" + Math.random().toString(36).slice(2, 7).toUpperCase();
+      const exists = await Parcel2.exists({ customId });
+      if (!exists) break;
+    }
+
+    const createdAt = new Date();
+    const expiresAt = new Date(createdAt.getTime() + hrs * 3600000);
+
+        const locker = await Locker.findOne({ lockerId: "L00002" });
+    if (!locker) {
+      return res.status(500).json({ error: "Locker not found" });
+    }
+
+    
+    const compartment = locker.compartments.find(
+      (c) => c.size === size && !c.isBooked,
+    );
+    if (!compartment) {
+      return res.status(409).json({
+        error: "No free compartment",
+      });
+    }
+      const hw = await unlockCompartment({
+      sendUnlock,
+      checkLockerStatus,
+      compartmentId: compartment.compartmentId
+    });
+if (!hw.ok) {
+  return res.status(504).json({
+    success: false,
+    message: "Compartment did not unlock",
+    details: hw
+  });
+}
+
+    // ================= CREATE PARCEL =================
+
+    const parcel = await Parcel2.create({
+      senderPhone: deliveryPhone,
+      receiverPhone: recipientPhone,
+      size,
+      lockerId: locker.lockerId,
+      hours: hrs,
+      terminal_store: true,
+      accessCode: Math.floor(100000 + Math.random() * 900000).toString(),
+      customId,
+      isDropoff : true,
+      createdAt,
+      expiresAt,
+      status: "awaiting_pick",
+      paymentStatus: "pending",
+    });
+
+   compartment.isBooked = true;
+    compartment.currentParcelId = parcel._id;
+    await locker.save();
+
+    parcel.compartmentId = compartment.compartmentId;
+    await parcel.save();
+
+       return res.json({
+      success: true,
+      customId: parcel.customId,
+      accessCode: parcel.accessCode,
+      lockerId: parcel.lockerId,
+      compartmentId: parcel.compartmentId,
+    });
+  } catch (err) {
+    console.error("❌ dropoff error:", err);
+    return res.status(500).json({
+      success: false,
+      error: "Server error",
+    });
+  }
+});
+
+
+
+
 
 app.get("/locker/:lockerId/available-sizes", async (req, res) => {
   try {
@@ -1712,30 +1935,55 @@ app.post("/api/parcel/select-courier/:id", async (req, res) => {
   }
 });
 
-app.post("/api/razorpay/order", async (req, res) => {
-  const { parcelId } = req.body;
+app.post('/api/razorpay/order', express.json(), async (req, res) => {
+  try {
+    const { parcelId } = req.body;
 
-  const parcel = await Parcel2.findById(parcelId);
-  if (!parcel) return res.status(404).send("Parcel not found");
+    if (!parcelId) {
+      return res.status(400).json({
+        message: 'parcelId missing in request body',
+      });
+    }
 
-  const amount = Number(parcel.shiprocketQuote.estimated_cost) * 100; // paise
+    const parcel = await Parcel2.findById(parcelId);
 
-  const order = await razorpay.orders.create({
-    amount,
-    currency: "INR",
-    receipt: parcel.customId,
-    payment_capture: 1,
-  });
+    if (!parcel) {
+      return res.status(400).json({
+        message: 'Parcel not found',
+      });
+    }
 
-  parcel.razorpayOrderId = order.id;
-  await parcel.save();
+    if (!parcel.cost || parcel.cost <= 0) {
+      return res.status(400).json({
+        message: 'Invalid overstay amount',
+      });
+    }
 
-  res.json({
-    orderId: order.id,
-    amount: order.amount,
-    key: process.env.RAZORPAY_KEY_ID,
-  });
+    const order = await razorpay.orders.create({
+      amount: parcel.cost * 100, // PAISA
+      currency: 'INR',
+      receipt: `parcel_${parcel._id}`,
+    });
+
+    return res.status(200).json({
+      key: process.env.RAZORPAY_KEY_ID,
+      orderId: order.id,
+      amount: order.amount,
+    });
+  } catch (err) {
+    console.error('RAZORPAY ORDER ERROR:', err);
+
+    return res.status(500).json({
+      message: err.message || 'Order creation failed',
+    });
+  }
 });
+
+
+
+
+
+
 app.post("/api/razorpay/verify", async (req, res) => {
   try {
     const {

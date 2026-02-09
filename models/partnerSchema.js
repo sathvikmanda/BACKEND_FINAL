@@ -3,27 +3,19 @@ const mongoose = require("mongoose");
 /**
  * 💰 Billing sub-schema
  */
-const BillingSchema = new mongoose.Schema({
-  model: {
-    type: String,
-    enum: ["per_order", "monthly", "commission"],
-    required: true
-  },
 
-  rate: {
+const BillingSchema = new mongoose.Schema({
+
+  // ₹ per hour of storage used
+  hourlyRate: {
     type: Number,
-    required: true
+    required: true,
+    min: 0
   },
 
   currency: {
     type: String,
     default: "INR"
-  },
-
-  billingCycle: {
-    type: String,
-    enum: ["weekly", "monthly"],
-    default: "monthly"
   },
 
   lastBilledAt: Date,
@@ -38,7 +30,9 @@ const BillingSchema = new mongoose.Schema({
     type: Number,
     default: 0
   }
+
 }, { _id: false });
+
 
 /**
  * 🧩 Partner schema (merged)
@@ -46,23 +40,31 @@ const BillingSchema = new mongoose.Schema({
 const PartnerSchema = new mongoose.Schema({
 
   // 👤 Login / owner info
-  name: { type: String, required: true },           // "Vivek Kaushik"
+  name: { type: String, required: true },
   email: { type: String, required: true, unique: true },
   phone: { type: String, required: true },
 
   // 🏢 Company info
-  companyName: { type: String, required: true },    // "Droppoint Systems Pvt Ltd"
+  companyName: { type: String, required: true },
   logoUrl: String,
+
+  // 📦 Storage policy
+  maxStorageHours: {
+    type: Number,
+    default: 72,
+    min: 1,
+    max: 720
+  },
 
   // 🔐 Auth & API
   apiKey: { type: String, unique: true },
   googleId: { type: String, unique: true, sparse: true },
 
-  // 💰 Billing
+  // 💰 Billing — usage based
   billing: BillingSchema,
 
-  // 🛡️ Status flags
-  isApproved: { type: Boolean, default: false },    // admin approval
+  // 🛡️ Status
+  isApproved: { type: Boolean, default: false },
   isActive: { type: Boolean, default: true },
 
   // 📊 Metadata
