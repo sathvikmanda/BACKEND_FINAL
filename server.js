@@ -1308,7 +1308,7 @@ if (!hw.ok) {
   checkLockerStatus,
   req,
   maxTries: 3,
-  delayMs: 10000
+  delayMs: 1000
 }).catch(err => {
   console.error("Locker verify failed:", err);
 });
