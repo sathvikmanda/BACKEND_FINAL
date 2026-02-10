@@ -440,13 +440,18 @@ app.post("/api/locker/scan", express.json(), async (req, res) => {
     const flow = await resolveFlow(accessCode, { Parcel2 });
 
     let result;
-    if (flow === "MODIFY") {
-      result = await handleModifyFlow(accessCode, deps);
-    } else if (flow === "PARCEL") {
-      result = await handleParcelFlow(accessCode, deps);
-    } else {
-      return res.status(404).json({ success: false, message: "Invalid code" });
-    }
+   if (flow === "MODIFY") {
+  result = await handleModifyFlow(accessCode, deps);
+} else if (flow === "PARCEL") {
+  // 🔥 USE PICKUP FLOW (HAS OVERSTAY LOGIC)
+  result = await handlePickupFlow(accessCode, deps);
+} else {
+  return res.status(404).json({
+    success: false,
+    message: "Invalid code",
+  });
+}
+
 
     return res.status(result.status).json(result.body);
   } catch (err) {

@@ -80,6 +80,7 @@ module.exports = async function handlePickupFlow(
 
     // ---------- OVERSTAY BILLING ----------
 
+    
     if (parcel.expiresAt < now && parcel.status !== "overstay") {
       parcel.status = "overstay";
       parcel.billing.isChargeable = true;
@@ -87,50 +88,58 @@ module.exports = async function handlePickupFlow(
     }
 
     if (parcel.status === "overstay") {
-      let amount = parcel.billing.amountAccrued || 0;
+      const nowTime = new Date();
 
-      if (!amount || amount === 0) {
-        const diff = now - parcel.expiresAt;
-        const hours = Math.ceil(diff / (1000 * 60 * 60));
-        amount = hours * RATE_BY_SIZE[parcel.size];
+const diffMs = now - parcel.expiresAt;
+const extraHours = Math.max(
+  1,
+  Math.ceil(diffMs / (1000 * 60 * 60))
+);
 
-        await Parcel2.updateOne(
-          { _id: parcel._id },
-          { $set: { "billing.amountAccrued": amount } }
-        );
+const ratePerHour = RATE_BY_SIZE[parcel.size];
+const amount = extraHours * ratePerHour;
+
+await Parcel2.updateOne(
+  { _id: parcel._id },
+  {
+    $set: {
+      "billing.amountAccrued": amount,
+      "billing.ratePerHour": ratePerHour,
+      cost: amount,
+      paymentStatus: "pending",
+    },
+  }
+);
+
+const order = await razorpay.orders.create({
+  amount: amount * 100,
+  currency: "INR",
+  receipt: `parcel_${parcel.customId}`,
+});
+
+return {
+  status: 402,
+  body: {
+    success: false,
+    paymentRequired: true,
+    parcelId: `${parcel._id}`,
+    amount,
+    usageSummary: {
+      size: parcel.size,
+      extraHours,
+      ratePerHour,
+      storedAt: parcel.createdAt.toISOString(),
+      freeUntil: parcel.expiresAt.toISOString(),
+      now: now.toISOString(),
+    },
+  },
+};
+
+
+
+
       }
-
-      amount = Number(amount);
-
-      if (amount > 0) {
-        const order = await razorpay.orders.create({
-          amount: amount * 100,
-          currency: "INR",
-          receipt: `parcel_${parcel.customId}`,
-        });
-
-        await Parcel2.updateOne(
-          { _id: parcel._id },
-          {
-            $set: {
-              razorpayOrderId: order.id,
-              cost: amount,
-              paymentStatus: "pending",
-            },
-          }
-        );
-
-        return {
-          status: 402,
-          body: {
-            success: false,
-            paymentRequired: true,
-            amount,
-            parcelId : `${parcel._id}`
-          }
-        };
-      }
-    }
+    
 
     // ---------- UNLOCK ----------
 
