@@ -4,6 +4,8 @@ const DeliveryAgent = require("./models/deliveryAgent");
 const app = express();
 const SenderBook = require("./models/SenderAddressBook");
 const cors = require("cors");
+const path = require("path")
+const fs = require("fs")
 const mongoose = require("mongoose");
 const Parcel2 = require("./models/parcel");
 const Locker = require("./models/locker");
@@ -16,10 +18,14 @@ const io = new Server(server);
 const lockerID = "L00002";
 const Razorpay = require("razorpay");
 const crypto = require("crypto");
+const { initRecordingSystem } = require("./camera/recordingOrchestrator");
+const { activateRecording, deactivateRecording } = require("./camera/recordingSessionManager");
 const { sendSMS } = require("./smartping.js");
 require("dotenv").config();
 const mongo_uri = process.env.MONGOURI
 const twilio = require("twilio");
+const BASE_DIR = "/Users/sathvikmanda/Desktop/kiosk/backend /recordings/pickup";
+
 const {
   TWILIO_ACCOUNT_SID,
   TWILIO_AUTH_TOKEN,                                                         
@@ -161,7 +167,7 @@ app.use(express.json());
 //       });
 //     }
 
-//     const phone = phoneRaw.startsWith("+91") ? phoneRaw : "+91" + phoneRaw;
+//     const phone = phoneRawsWith("+91") ? phoneRaw : "+91" + phoneRaw;
 
 //     if (!client) {
 //       console.log("🔥 DEV MODE OTP AUTO-ACCEPT");
@@ -383,6 +389,55 @@ const RATE_BY_SIZE = {
   medium: 10,
   large: 20,
 };
+
+app.post("/api/complaint", async (req, res) => {
+  try {
+    const helpId = "HR-" + Date.now();
+    console.log("📄 Complaint created:", helpId);
+      console.log(typeof(BASE_DIR));
+    // Start recording immediately
+    await activateRecording(
+  process.env.CAMERA_RTSP, // rtspUrl
+  BASE_DIR,                // baseDir
+  helpId,                  // helpId (sessionId)
+  "LOCKER-TEST"             // lockerId
+);
+
+
+    res.json({
+      success: true,
+      helpId,
+    });
+  } catch (err) {
+    console.error("❌ Complaint create failed:", err);
+    res.status(500).json({ success: false });
+  }
+});
+
+app.post("/api/complaint/resolve", async (req, res) => {
+  try {
+    const { helpId } = req.body;
+
+    if (!helpId) {
+      return res.status(400).json({ error: "helpId required" });
+    }
+
+    console.log("✅ Complaint resolved:", helpId);
+
+    await deactivateRecording({ sessionId: helpId });
+
+    res.json({
+      success: true,
+      message: "Recording stopped",
+    });
+  } catch (err) {
+    console.error("❌ Complaint resolve failed:", err);
+    res.status(500).json({ success: false });
+  }
+});
+
+
+
 /// UNLOCK FLOW
 
 const resolveFlow = require("./services/unlock/resolveFlow");
@@ -402,6 +457,7 @@ const deps = {
   sendSMS,
   Partner
 };
+
 
 app.post("/api/locker/unlock-code", express.json(), async (req, res) => {
   try {
@@ -598,13 +654,13 @@ app.post("/terminal/dropoff", async (req, res) => {
     let { size, hours, phone } = req.body;
     size = size.toLowerCase();
     const PRICES = { small: 5, medium: 10, large: 20 };
-
+    console.log(hours)
     if (!PRICES[size]) {
       return res.status(400).json({ error: "Invalid size" });
     }
 
     const hrs = Number(hours);
-    if (!Number.isInteger(hrs) || hrs < 1 || hrs > 72) {
+    if (!Number.isInteger(hrs) || hrs < 1) {
       return res.status(400).json({ error: "Invalid hours" });
     }
 
@@ -1131,6 +1187,9 @@ console.log("HOURS:", hrs);
       checkLockerStatus,
       compartmentId: compartment.compartmentId
     });
+
+  
+
 if (!hw.ok) {
   return res.status(504).json({
     success: false,
@@ -1185,6 +1244,7 @@ if (!hw.ok) {
 
 
     // ================= RESPONSE =================
+
 
     return res.json({
       success: true,
@@ -2329,6 +2389,11 @@ async function bootstrap() {
   // 3) start BU + polling
 
   await startBuAndPolling();
+  await initRecordingSystem({
+      baseDir: "./recordings",
+      cameraRtspUrl: process.env.CAMERA_RTSP,
+      io
+    });
 
   // 5) finally start HTTP + Socket.IO
   server.listen(3000, "0.0.0.0", () => {
