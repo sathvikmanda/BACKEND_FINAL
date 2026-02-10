@@ -459,13 +459,13 @@ function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
 
-async function verifyLockerClosed({
+async function verifyLockerClosed(
   addr = 0x00,
   compartmentId,
-  req,
+  helpId,
   maxTries = 10,
   delayMs = 1000
-}) {
+) {
   for (let i = 1; i <= maxTries; i++) {
     console.log(`🔍 Locker check attempt ${i}`);
 
@@ -483,7 +483,7 @@ async function verifyLockerClosed({
 
   console.log("⚠️ Locker still unlocked after retries");
 
-  const helpId = req.session?.helpId;
+  const helpId = helpId;
 
   if (helpId) {
     await resolveComplaint(helpId);
@@ -791,6 +791,7 @@ app.post("/terminal/payment/verify", async (req, res) => {
       razorpay_payment_id,
       razorpay_signature,
       parcelId,
+      helpId
     } = req.body;
 
     if (
@@ -890,6 +891,16 @@ app.post("/terminal/payment/verify", async (req, res) => {
       .catch((error) => console.error("❌ WhatsApp Message Error:", error));
     const smsText1 = `Your Drop Point Locker Access Code is ${parcel.accessCode}. Please don't share this with anyone. -DROPPOINT`;
     const sendResult1 = sendSMS(`91${parcel.senderPhone}`, smsText1);
+    
+        verifyLockerClosed({
+  compartmentId: compartment.compartmentId,
+  checkLockerStatus,
+  helpId,
+  maxTries: 3,
+  delayMs: 1000
+}).catch(err => {
+  console.error("Locker verify failed:", err);
+});
 
     // ✅ ALWAYS RETURN SUCCESS AFTER PAYMENT
     return res.json({
