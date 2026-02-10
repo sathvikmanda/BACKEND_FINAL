@@ -25,6 +25,14 @@ require("dotenv").config();
 const mongo_uri = process.env.MONGOURI
 const twilio = require("twilio");
 const BASE_DIR = "/Users/sathvikmanda/Desktop/kiosk/backend /recordings/pickup";
+const session = require("express-session");
+
+app.use(session({
+  secret: "droppoint-2025",
+  resave: false,
+  saveUninitialized: true,
+  cookie: { secure: false } // true only if HTTPS
+}));
 
 const {
   TWILIO_ACCOUNT_SID,
@@ -393,26 +401,39 @@ const RATE_BY_SIZE = {
 app.post("/api/complaint", async (req, res) => {
   try {
     const helpId = "HR-" + Date.now();
-    console.log("📄 Complaint created:", helpId);
-      console.log(typeof(BASE_DIR));
-    // Start recording immediately
-    await activateRecording(
-  process.env.CAMERA_RTSP, // rtspUrl
-  BASE_DIR,                // baseDir
-  helpId,                  // helpId (sessionId)
-  "LOCKER-TEST"             // lockerId
-);
 
+    // ✅ Save in session
+    req.session.helpId = helpId;
+
+    console.log("📄 Complaint created:", helpId);
+    console.log("Session stored helpId:", req.session.helpId);
+
+    await activateRecording(
+      process.env.CAMERA_RTSP,
+      BASE_DIR,
+      helpId,
+      "LOCKER-TEST"
+    );
 
     res.json({
       success: true,
       helpId,
     });
+
   } catch (err) {
     console.error("❌ Complaint create failed:", err);
     res.status(500).json({ success: false });
   }
 });
+
+async function resolveComplaint(helpId) {
+  if (!helpId) return;
+
+  console.log("✅ Complaint resolved:", helpId);
+  await deactivateRecording({ sessionId: helpId });
+}
+
+
 
 app.post("/api/complaint/resolve", async (req, res) => {
   try {
@@ -422,9 +443,7 @@ app.post("/api/complaint/resolve", async (req, res) => {
       return res.status(400).json({ error: "helpId required" });
     }
 
-    console.log("✅ Complaint resolved:", helpId);
-
-    await deactivateRecording({ sessionId: helpId });
+    await resolveComplaint(helpId);
 
     res.json({
       success: true,
@@ -435,6 +454,46 @@ app.post("/api/complaint/resolve", async (req, res) => {
     res.status(500).json({ success: false });
   }
 });
+
+function sleep(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
+
+async function verifyLockerClosed({
+  addr = 0x00,
+  compartmentId,
+  req,
+  maxTries = 3,
+  delayMs = 10000
+}) {
+  for (let i = 1; i <= maxTries; i++) {
+    console.log(`🔍 Locker check attempt ${i}`);
+
+    await sleep(delayMs);
+
+    const status = await checkLockerStatus(addr, compartmentId);
+
+    console.log("Locker status:", status);
+
+    if (status === "Locked") {
+      console.log("🔒 Locker confirmed locked");
+      return true;
+    }
+  }
+
+  console.log("⚠️ Locker still unlocked after retries");
+
+  const helpId = req.session?.helpId;
+
+  if (helpId) {
+    await resolveComplaint(helpId);
+    delete req.session.helpId;
+  }
+
+  return false;
+}
+
+
 
 
 
@@ -1242,7 +1301,17 @@ if (!hw.ok) {
 
     // ================= NOTIFY =================
 
+    /// POST - UNLOCK CHECK
 
+    verifyLockerClosed({
+  compartmentId: compartment.compartmentId,
+  checkLockerStatus,
+  req,
+  maxTries: 3,
+  delayMs: 10000
+}).catch(err => {
+  console.error("Locker verify failed:", err);
+});
     // ================= RESPONSE =================
 
 
