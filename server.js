@@ -458,39 +458,66 @@ app.post("/api/complaint/resolve", async (req, res) => {
 function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
+async function checkSingleLockStatus(addr = 0x00, compartmentId = 0) {
+  try {
+    const data = await sendPacket(buildGetStatusPacket(addr));
 
-async function verifyLockerClosed(
-  addr = 0x00,
+    if (!data) {
+      console.warn("⚠️ No status frame received");
+      return null;
+    }
+
+    const status = parseLockStatus(data);
+    if (!status) {
+      console.warn("⚠️ Status parse failed");
+      return null;
+    }
+
+    const key = `Lock_${compartmentId}`;
+    const result = status[key];
+
+    console.log(`🔍 Lock ${compartmentId} @ addr ${addr} →`, result);
+
+    return result; // "Locked" or "Unlocked"
+
+  } catch (err) {
+    console.error("checkSingleLockStatus error:", err);
+    return null;
+  }
+}
+
+
+
+async function verifyLockerClosedUntilLocked(
+  addr,
   compartmentId,
   helpId,
-  maxTries = 10,
   delayMs = 1000
 ) {
-  for (let i = 1; i <= maxTries; i++) {
-    console.log(`🔍 Locker check attempt ${i}`);
+  console.log("👁️ Watching locker until locked...");
 
+  while (true) {
     await sleep(delayMs);
 
-    const status = await checkLockerStatus(addr, compartmentId);
+    const status = await checkSingleLockStatus(addr, compartmentId);
 
-    console.log("Locker status:", status);
+    console.log("Status:", status);
 
     if (status === "Locked") {
       console.log("🔒 Locker confirmed locked");
+
+      if (helpId) {
+        await resolveComplaint(helpId);
+      }
+
       return true;
     }
+
+    // optional: detect hardware failure
+    if (status === null) {
+      console.warn("⚠️ Status read failed — retrying...");
+    }
   }
-
-  console.log("⚠️ Locker still unlocked after retries");
-
-  const helpId = helpId;
-
-  if (helpId) {
-    await resolveComplaint(helpId);
-    delete req.session.helpId;
-  }
-
-  return false;
 }
 
 
@@ -893,7 +920,7 @@ app.post("/terminal/payment/verify", async (req, res) => {
     const sendResult1 = sendSMS(`91${parcel.senderPhone}`, smsText1);
     
         verifyLockerClosed({
-  compartmentId: compartment.compartmentId,
+  compartmentId: parcel.compartmentId,
   checkLockerStatus,
   helpId,
   maxTries: 3,
