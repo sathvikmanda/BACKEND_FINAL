@@ -430,7 +430,7 @@ async function resolveComplaint(helpId) {
   if (!helpId) return;
 
   console.log("✅ Complaint resolved:", helpId);
-  await deactivateRecording({ sessionId: helpId });
+  await deactivateRecording(helpId);
 }
 
 
