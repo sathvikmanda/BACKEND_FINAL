@@ -388,7 +388,7 @@ const RATE_BY_SIZE = {
 const resolveFlow = require("./services/unlock/resolveFlow");
 const handleModifyFlow = require("./services/unlock/handleModifyFlow");
 const handleParcelFlow = require("./services/unlock/handleParcelFlow");
-
+const handleDeliveryPickupFlow = require("./services/unlock/handleDeliveryDropFlow.js");
 const deps = {
   Parcel2,
   Locker,
@@ -400,6 +400,7 @@ const deps = {
   io,
   RATE_BY_SIZE,
   sendSMS,
+  Partner
 };
 
 app.post("/api/locker/unlock-code", express.json(), async (req, res) => {
@@ -1107,7 +1108,6 @@ console.log("HOURS:", hrs);
       const exists = await Parcel2.exists({ customId });
       if (!exists) break;
     }
-
     const createdAt = new Date();
     const expiresAt = new Date(createdAt.getTime() + hrs * 3600000);
 
@@ -1158,6 +1158,7 @@ if (!hw.ok) {
       status: "awaiting_pick",
       paymentStatus: "pending",
     });
+    console.log(parcel.partner)
 
     // ================= MARK LOCKER =================
 
