@@ -919,7 +919,7 @@ app.post("/terminal/payment/verify", async (req, res) => {
     const smsText1 = `Your Drop Point Locker Access Code is ${parcel.accessCode}. Please don't share this with anyone. -DROPPOINT`;
     const sendResult1 = sendSMS(`91${parcel.senderPhone}`, smsText1);
     
-        verifyLockerClosed({
+        verifyLockerClosedUntilLocked({
   compartmentId: parcel.compartmentId,
   checkLockerStatus,
   helpId,
@@ -1341,7 +1341,7 @@ if (!hw.ok) {
 
     /// POST - UNLOCK CHECK
 
-    verifyLockerClosed({
+    verifyLockerClosedUntilLocked({
   compartmentId: compartment.compartmentId,
   checkLockerStatus,
   req,
