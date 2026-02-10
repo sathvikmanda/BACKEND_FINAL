@@ -463,8 +463,8 @@ async function verifyLockerClosed({
   addr = 0x00,
   compartmentId,
   req,
-  maxTries = 3,
-  delayMs = 10000
+  maxTries = 10,
+  delayMs = 1000
 }) {
   for (let i = 1; i <= maxTries; i++) {
     console.log(`🔍 Locker check attempt ${i}`);
