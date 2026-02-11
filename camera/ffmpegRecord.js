@@ -16,10 +16,20 @@ export function recordClip({ rtspUrl, baseDir, helpId, type }) {
   const p = spawn(FFMPEG_PATH, [
     "-rtsp_transport", "tcp",
     "-i", rtspUrl,
-    "-t", "10",
-    "-an",
+
+    // 🎥 video
+    "-map", "0:v:0",
     "-c:v", "libx264",
     "-preset", "veryfast",
+
+    // 🔊 audio
+    "-map", "0:a?",
+    "-c:a", "aac",
+    "-ar", "44100",
+    "-ac", "1",
+
+    "-t", "10",
+    "-movflags", "+faststart",
     outputPath
   ]);
 

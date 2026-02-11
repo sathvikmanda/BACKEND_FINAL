@@ -24,7 +24,12 @@ const { sendSMS } = require("./smartping.js");
 require("dotenv").config();
 const mongo_uri = process.env.MONGOURI
 const twilio = require("twilio");
-const BASE_DIR = "/Users/sathvikmanda/Desktop/kiosk/backend /recordings/pickup";
+const { runDriveSync } = require("./camera/driveSyncWorker");
+const { checkStorageAndSync } = require("./camera/storageMonitor");
+const { appendTimeline } = require("./camera/timelineWriter");
+const { generateClipsForSession } = require("./camera/multiClipProcessor");
+const {uploadComplaintFolder} = require("./camera/googleDriveUploader")
+const BASE_DIR = process.cwd();
 const session = require("express-session");
 
 app.use(session({
@@ -402,18 +407,24 @@ app.post("/api/complaint", async (req, res) => {
   try {
     const helpId = "HR-" + Date.now();
 
+    console.log("📄 Complaint created:", helpId);
+
+    // 1️⃣ Start recording
     await activateRecording(
-      process.env.CAMERA_RTSP,
-      BASE_DIR,
-      helpId,
-      "LOCKER-TEST"
-    );
+  process.env.CAMERA_RTSP,
+  BASE_DIR,
+  helpId,
+  "LOCKER-TEST"
+);
+
+
+    // 2️⃣ Write timeline entry
+    appendTimeline(BASE_DIR, helpId, "COMPLAINT CREATED");
 
     res.json({
       success: true,
       helpId,
     });
-
   } catch (err) {
     console.error("❌ Complaint create failed:", err);
     res.status(500).json({ success: false });
@@ -425,15 +436,40 @@ app.post("/api/complaint", async (req, res) => {
 
 
 
-async function resolveComplaint(helpId) {
-  console.log("resolveComplaint called with:", helpId);
+async function bootstrap() {
+  console.log("🚀 Starting terminal server...");
 
-  if (!helpId) return;
-  console.log("Calling deactivateRecording...");
+  await startBuAndPolling();
 
+  await initRecordingSystem({
+    baseDir: process.cwd(),
+    cameraRtspUrl: process.env.CAMERA_RTSP,
+    io
+  });
 
-  console.log("✅ Complaint resolved:", helpId);
-  await deactivateRecording(helpId);
+  server.listen(3000, "0.0.0.0", () => {
+    console.log("Server listening on all interfaces :3000");
+  });
+
+  console.log("🌟 System ready.");
+
+  // 🔵 Drive sync every 10 mins
+  setInterval(async () => {
+    try {
+      await runDriveSync(process.cwd(), "L00002");
+    } catch (err) {
+      console.error("Drive sync error:", err);
+    }
+  }, 10 * 60 * 1000);
+
+  // 🟣 Storage monitor every 5 mins
+  setInterval(async () => {
+    try {
+      await checkStorageAndSync(process.cwd(), "L00002");
+    } catch (err) {
+      console.error("Storage monitor error:", err);
+    }
+  }, 5 * 60 * 1000);
 }
 
 
@@ -446,12 +482,27 @@ app.post("/api/complaint/resolve", async (req, res) => {
       return res.status(400).json({ error: "helpId required" });
     }
 
-    await resolveComplaint(helpId);
+    console.log("✅ Complaint resolved:", helpId);
+
+    // 1️⃣ Stop recording
+    await deactivateRecording({ sessionId: helpId });
+
+    // 2️⃣ Wait a moment for file flush
+    await new Promise(r => setTimeout(r, 2000));
+
+    // 3️⃣ Generate clips
+    const clips = await generateClipsForSession(helpId, BASE_DIR);
+
+    // 4️⃣ Timeline entry
+    appendTimeline(BASE_DIR, helpId, "COMPLAINT RESOLVED");
+    appendTimeline(BASE_DIR, helpId, `CLIPS GENERATED: ${clips.length}`);
 
     res.json({
       success: true,
-      message: "Recording stopped",
+      message: "Recording stopped and clips generated",
+      clips,
     });
+
   } catch (err) {
     console.error("❌ Complaint resolve failed:", err);
     res.status(500).json({ success: false });
@@ -488,6 +539,15 @@ async function checkSingleLockStatus(addr = 0x00, compartmentId = 0) {
     return null;
   }
 }
+
+async function resolveComplaint(helpId) {
+  if (!helpId) return;
+
+  console.log("✅ Complaint resolved:", helpId);
+  await deactivateRecording(helpId);
+}
+
+
 
 
 async function verifyLockerClosedUntilLocked(
@@ -549,7 +609,8 @@ const deps = {
   io,
   RATE_BY_SIZE,
   sendSMS,
-  Partner
+  Partner,
+  client
 };
 
 
@@ -797,7 +858,8 @@ if (!req.body.helpId) {
       paymentStatus: "pending",
       helpId: req.body.helpId,
     });
-    
+       
+
 
 
     // ---------- CREATE RAZORPAY ORDER ----------
@@ -984,9 +1046,9 @@ app.post("/terminal/payment/drop-verify", async (req, res) => {
       razorpay_payment_id,
       razorpay_signature,
       parcelId,
+      helpId,
     } = req.body;
 
-    // ================= VALIDATION =================
     if (
       !razorpay_order_id ||
       !razorpay_payment_id ||
@@ -1005,7 +1067,6 @@ app.post("/terminal/payment/drop-verify", async (req, res) => {
         .json({ success: false, error: "Parcel not found" });
     }
 
-    //  ================= IDEMPOTENT =================
     if (parcel.paymentStatus === "completed") {
       return res.json({
         success: true,
@@ -1015,7 +1076,6 @@ app.post("/terminal/payment/drop-verify", async (req, res) => {
       });
     }
 
-    // ================= VERIFY SIGNATURE =================
     const expectedSignature = crypto
       .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
       .update(`${razorpay_order_id}|${razorpay_payment_id}`)
@@ -1027,14 +1087,12 @@ app.post("/terminal/payment/drop-verify", async (req, res) => {
         .json({ success: false, error: "Invalid signature" });
     }
 
-    // ================= PAYMENT CONFIRMED =================
+    // ✅ Payment confirmed
     parcel.paymentStatus = "completed";
     parcel.status = "awaiting_pick";
     parcel.razorpayPaymentId = razorpay_payment_id;
     parcel.razorpaySignature = razorpay_signature;
-    //parcel.paidAt = new Date();
 
-    // ================= LOCKER ALLOCATION =================
     const locker = await Locker.findOne({ lockerId: "L00002" });
     if (!locker) {
       return res
@@ -1052,7 +1110,6 @@ app.post("/terminal/payment/drop-verify", async (req, res) => {
         .json({ success: false, error: "No free compartment" });
     }
 
-    // ================= UNLOCK =================
     let addr = 0x00;
     let lockNum = parseInt(compartment.compartmentId);
     if (lockNum > 11) {
@@ -1067,46 +1124,58 @@ app.post("/terminal/payment/drop-verify", async (req, res) => {
         error: "Failed to unlock locker",
       });
     }
-    console.log(compartment.compartmentId);
-    console.log(parcel.status);
-    // ================= FINAL DB WRITE =================
+console.log("About to resolve complaint with helpId:", helpId);
+
+    // 🔍 START WATCH LOOP (non-blocking)
+    verifyLockerClosedUntilLocked(
+      addr,
+      lockNum,
+      parcel.helpId,
+      1000
+    ).catch(err => {
+      console.error("Verify loop crashed:", err);
+    });
+
     compartment.isBooked = true;
     compartment.currentParcelId = parcel._id;
     await locker.save();
 
     parcel.lockerId = locker.lockerId;
     parcel.compartmentId = compartment.compartmentId;
-
     await parcel.save();
-    await client.messages
-      .create({
-        to: `whatsapp:+91${parcel.receiverPhone}`,
-        from: "whatsapp:+15558076515",
-        contentSid: "HX4200777a18b1135e502d60b796efe670", // Approved Template SID
-        contentVariables: JSON.stringify({
-          1: parcel.receiverName,
-          2: parcel.senderName,
-          3: `mobile/incoming/${parcel.customId}/qr`,
-          4: `dir/?api=1&destination=${parcel.lockerLat},${parcel.lockerLng}`,
-        }),
-      })
-      .then((message) => console.log("✅ WhatsApp Message Sent:", message.sid))
-      .catch((error) => console.error("❌ WhatsApp Message Error:", error));
-    const smsText1 = `Your Drop Point Locker Access Code is ${parcel.accessCode}. Please don't share this with anyone. -DROPPOINT`;
-    const sendResult1 = sendSMS(`91${parcel.senderPhone}`, smsText1);
 
-    // ================= SUCCESS =================
+    await client.messages.create({
+      to: `whatsapp:+91${parcel.receiverPhone}`,
+      from: "whatsapp:+15558076515",
+      contentSid: "HX4200777a18b1135e502d60b796efe670",
+      contentVariables: JSON.stringify({
+        1: parcel.receiverName,
+        2: parcel.senderName,
+        3: `mobile/incoming/${parcel.customId}/qr`,
+        4: `dir/?api=1&destination=${parcel.lockerLat},${parcel.lockerLng}`,
+      }),
+    });
+
+    const smsText1 = `Your Drop Point Locker Access Code is ${parcel.accessCode}. Please don't share this with anyone. -DROPPOINT`;
+    sendSMS(`91${parcel.senderPhone}`, smsText1);
+
     return res.json({
       success: true,
       accessCode: parcel.accessCode,
       lockerId: parcel.lockerId,
       compartmentId: parcel.compartmentId,
     });
+
   } catch (err) {
     console.error("❌ payment verify error:", err);
     return res.status(500).json({ success: false, error: "Server error" });
   }
 });
+
+
+
+
+
 
 app.post("/terminal/authdropoff", async (req, res) => {
   try {
@@ -1479,11 +1548,15 @@ app.post("/api/overstay/payment/verify", async (req, res) => {
 
 
 
-app.post("/personal/dropoff",async(req,res)=>{
-  try{
-   console.log("📦 dropoff hit");
+app.post("/personal/dropoff", async (req, res) => {
+  try {
+    console.log("📦 personal dropoff hit");
 
-    const { recipientPhone, deliveryPhone, size, hours } = req.body;
+    const { recipientPhone, deliveryPhone, size, hours, helpId } = req.body;
+
+    console.log("Incoming helpId:", helpId);
+
+    // ================= VALIDATION =================
 
     const SIZE_ALLOWED = ["small", "medium", "large"];
 
@@ -1499,49 +1572,68 @@ app.post("/personal/dropoff",async(req,res)=>{
       return res.status(400).json({ error: "Invalid delivery phone" });
     }
 
-        const hrs = Number(hours);
+    const hrs = Number(hours);
     if (!Number.isInteger(hrs) || hrs < 1) {
       return res.status(400).json({ error: "Invalid hours" });
     }
 
-       let customId;
+    if (!helpId) {
+      return res.status(400).json({ error: "Missing helpId" });
+    }
+
+    // ================= LOCKER =================
+
+    const locker = await Locker.findOne({ lockerId: "L00002" });
+    if (!locker) {
+      return res.status(500).json({ error: "Locker not found" });
+    }
+
+    const compartment = locker.compartments.find(
+      (c) => c.size === size && !c.isBooked
+    );
+
+    if (!compartment) {
+      return res.status(409).json({
+        error: "No free compartment",
+      });
+    }
+
+    // ================= UNLOCK HARDWARE =================
+
+    let addr = 0x00;
+    let lockNum = parseInt(compartment.compartmentId);
+
+    if (lockNum > 11) {
+      addr = 0x01;
+      lockNum -= 12;
+    }
+
+    const hw = await unlockCompartment({
+      sendUnlock,
+      checkLockerStatus,
+      compartmentId: compartment.compartmentId,
+    });
+
+    if (!hw.ok) {
+      return res.status(504).json({
+        success: false,
+        message: "Compartment did not unlock",
+        details: hw,
+      });
+    }
+
+    // ================= CREATE PARCEL =================
+
+    let customId;
     while (true) {
-      customId = "P" + Math.random().toString(36).slice(2, 7).toUpperCase();
+      customId =
+        "P" + Math.random().toString(36).slice(2, 7).toUpperCase();
       const exists = await Parcel2.exists({ customId });
       if (!exists) break;
     }
 
     const createdAt = new Date();
     const expiresAt = new Date(createdAt.getTime() + hrs * 3600000);
-
-        const locker = await Locker.findOne({ lockerId: "L00002" });
-    if (!locker) {
-      return res.status(500).json({ error: "Locker not found" });
-    }
-
-    
-    const compartment = locker.compartments.find(
-      (c) => c.size === size && !c.isBooked,
-    );
-    if (!compartment) {
-      return res.status(409).json({
-        error: "No free compartment",
-      });
-    }
-      const hw = await unlockCompartment({
-      sendUnlock,
-      checkLockerStatus,
-      compartmentId: compartment.compartmentId
-    });
-if (!hw.ok) {
-  return res.status(504).json({
-    success: false,
-    message: "Compartment did not unlock",
-    details: hw
-  });
-}
-
-    // ================= CREATE PARCEL =================
 
     const parcel = await Parcel2.create({
       senderPhone: deliveryPhone,
@@ -1552,35 +1644,101 @@ if (!hw.ok) {
       terminal_store: true,
       accessCode: Math.floor(100000 + Math.random() * 900000).toString(),
       customId,
-      isDropoff : true,
+      isDropoff: true,
       createdAt,
       expiresAt,
       status: "awaiting_pick",
       paymentStatus: "pending",
+      helpId: helpId,
     });
 
-   compartment.isBooked = true;
+    // ================= BOOK COMPARTMENT =================
+
+    compartment.isBooked = true;
     compartment.currentParcelId = parcel._id;
+
     await locker.save();
 
     parcel.compartmentId = compartment.compartmentId;
     await parcel.save();
 
-       return res.json({
+        if (parcel.store_self) {
+      await client.messages.create({
+        to: `whatsapp:+91${parcel.senderPhone}`,
+        from: "whatsapp:+15558076515",
+        contentSid: "HXa7a69894f9567b90c1cacab6827ff46c",
+        contentVariables: JSON.stringify({
+          1: parcel.senderName,
+          2: `mobile/incoming/${parcel.customId}/qr`,
+        }),
+      });
+      const smsText2 = `Item successfully dropped at Locker ${
+        locker.lockerId
+      }. Pickup code: ${
+        parcel.accessCode
+      }. Share this securely. Receiver can also access via ${`https://demo.droppoint.in/${parcel.customId}/qr`} - DROPPOINT`;
+      const sendResult2 = sendSMS(`91${parcel.senderPhone}`, smsText2);
+      console.log(sendResult2);
+    } else {
+      await client.messages.create({
+        to: `whatsapp:+91${parcel.receiverPhone}`,
+        from: "whatsapp:+15558076515",
+        contentSid: "HX4200777a18b1135e502d60b796efe670", // Approved Template SID
+        contentVariables: JSON.stringify({
+          1: parcel.receiverName,
+          2: parcel.senderName,
+          3: `mobile/incoming/${parcel.customId}/qr`,
+          4: `dir/?api=1&destination=${parcel.lockerLat},${parcel.lockerLng}`,
+        }),
+      });
+    }
+    const smsText3 = `Item successfully dropped at Locker ${
+      locker.lockerId
+    }. Pickup code: ${
+      parcel.accessCode
+    }. Share this securely. Receiver can also access via ${`https://demo.droppoint.in/qr?parcelid=${parcel.customId}`} - DROPPOINT`;
+
+    const sendResult3 = sendSMS(`91${parcel.senderPhone}`, smsText3);
+    console.log(sendResult3);
+
+
+
+    // ================= START LOCK CLOSE VERIFICATION =================
+
+    verifyLockerClosedUntilLocked(
+      addr,
+      lockNum,
+      helpId,
+      1000
+    )
+      .then((result) => {
+        if (!result) {
+          console.warn("⚠️ Locker did not close in time");
+        }
+      })
+      .catch((err) => {
+        console.error("Verify loop crashed:", err);
+      });
+
+    // ================= RESPONSE =================
+
+    return res.json({
       success: true,
       customId: parcel.customId,
       accessCode: parcel.accessCode,
       lockerId: parcel.lockerId,
       compartmentId: parcel.compartmentId,
     });
+
   } catch (err) {
-    console.error("❌ dropoff error:", err);
+    console.error("❌ personal dropoff error:", err);
     return res.status(500).json({
       success: false,
       error: "Server error",
     });
   }
 });
+
 
 
 

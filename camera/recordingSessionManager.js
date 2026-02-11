@@ -109,7 +109,7 @@ async function stopRecording(sessionId ) {
 
   console.log("🛑 Stopping recording for", sessionId);
 
-ffmpeg.kill("SIGKILL");
+ffmpeg.kill("SIGTERM");
 
 await new Promise(resolve => {
   ffmpeg.on("close", resolve);
