@@ -91,7 +91,9 @@ async function startRecording(rtspUrl, baseDir, helpId, lockerId) {
  * Stops an active recording
  * @param {{ sessionId: string }}
  */
-async function stopRecording({ sessionId }) {
+async function stopRecording(sessionId ) {
+  console.log("stopRecording ENTERED for:", sessionId);
+
   if (!sessionId) {
     console.error("❌ stopRecording aborted: sessionId missing");
     return;
@@ -107,13 +109,12 @@ async function stopRecording({ sessionId }) {
 
   console.log("🛑 Stopping recording for", sessionId);
 
-  try {
-    ffmpeg.stdin.write("q");
-  } catch (e) {
-    console.warn("⚠️ Failed to send quit to ffmpeg");
-  }
+ffmpeg.kill("SIGKILL");
 
-  await new Promise(res => ffmpeg.on("close", res));
+await new Promise(resolve => {
+  ffmpeg.on("close", resolve);
+});
+
 
   await RecordingSession.findByIdAndUpdate(session._id, {
     endedAt: new Date(),

@@ -402,12 +402,6 @@ app.post("/api/complaint", async (req, res) => {
   try {
     const helpId = "HR-" + Date.now();
 
-    // ✅ Save in session
-    req.session.helpId = helpId;
-
-    console.log("📄 Complaint created:", helpId);
-    console.log("Session stored helpId:", req.session.helpId);
-
     await activateRecording(
       process.env.CAMERA_RTSP,
       BASE_DIR,
@@ -426,8 +420,17 @@ app.post("/api/complaint", async (req, res) => {
   }
 });
 
+
+
+
+
+
 async function resolveComplaint(helpId) {
+  console.log("resolveComplaint called with:", helpId);
+
   if (!helpId) return;
+  console.log("Calling deactivateRecording...");
+
 
   console.log("✅ Complaint resolved:", helpId);
   await deactivateRecording(helpId);
@@ -487,24 +490,28 @@ async function checkSingleLockStatus(addr = 0x00, compartmentId = 0) {
 }
 
 
-
 async function verifyLockerClosedUntilLocked(
   addr,
   compartmentId,
   helpId,
-  delayMs = 1000
+  delayMs = 1000,
+  maxRetries = 30 // 30 seconds max
 ) {
   console.log("👁️ Watching locker until locked...");
 
-  while (true) {
+  for (let i = 0; i < maxRetries; i++) {
     await sleep(delayMs);
 
     const status = await checkSingleLockStatus(addr, compartmentId);
 
-    console.log("Status:", status);
+    console.log("Parsed locker status:", status);
 
-    if (status === "Locked") {
+    if (!status) continue;
+
+    if (status.toLowerCase() === "locked") {
       console.log("🔒 Locker confirmed locked");
+      console.log("About to resolve complaint with helpId:", helpId);
+
 
       if (helpId) {
         await resolveComplaint(helpId);
@@ -512,13 +519,15 @@ async function verifyLockerClosedUntilLocked(
 
       return true;
     }
-
-    // optional: detect hardware failure
-    if (status === null) {
-      console.warn("⚠️ Status read failed — retrying...");
-    }
   }
+
+  console.warn("⚠️ Locker did not lock within timeout");
+  return false;
 }
+
+
+
+
 
 
 
@@ -736,6 +745,11 @@ app.post("/api/whatsapp/send-parcel-link", async (req, res) => {
 });
 
 app.post("/terminal/dropoff", async (req, res) => {
+  console.log("Incoming helpId from Flutter:", req.body.helpId);
+if (!req.body.helpId) {
+  return res.status(400).json({ error: "Missing helpId" });
+}
+
   try {
     let { size, hours, phone } = req.body;
     size = size.toLowerCase();
@@ -782,7 +796,10 @@ app.post("/terminal/dropoff", async (req, res) => {
       expiresAt,
       status: "awaiting_payment",
       paymentStatus: "pending",
+      helpId: req.body.helpId,
     });
+    
+
 
     // ---------- CREATE RAZORPAY ORDER ----------
     const order = await razorpay.orders.create({
@@ -873,6 +890,9 @@ app.post("/terminal/payment/verify", async (req, res) => {
     parcel.razorpaySignature = razorpay_signature;
     parcel.paidAt = new Date();
     await parcel.save();
+    // 🔍 Start background locker close verification
+
+
 
     // 🔓 TRY LOCKER (BEST EFFORT)
     let lockerError = null;
@@ -892,6 +912,15 @@ app.post("/terminal/payment/verify", async (req, res) => {
         lockNum -= 12;
       }
       const sent = await sendUnlock(lockNum, addr);
+      verifyLockerClosedUntilLocked(
+  addr,
+  lockNum,
+  parcel.helpId,
+  1000
+).catch(err => {
+  console.error("Verify loop crashed:", err);
+});
+
       compartment.isBooked = true;
       compartment.currentParcelId = parcel._id;
 
@@ -919,15 +948,20 @@ app.post("/terminal/payment/verify", async (req, res) => {
     const smsText1 = `Your Drop Point Locker Access Code is ${parcel.accessCode}. Please don't share this with anyone. -DROPPOINT`;
     const sendResult1 = sendSMS(`91${parcel.senderPhone}`, smsText1);
     
-        verifyLockerClosedUntilLocked({
+verifyLockerClosedUntilLocked({
   compartmentId: parcel.compartmentId,
   checkLockerStatus,
   helpId,
-  maxTries: 3,
-  delayMs: 1000
-}).catch(err => {
+  maxTries: 10,
+  delayMs: 1500
+})
+.then(() => {
+  return resolveComplaint(helpId);
+})
+.catch(err => {
   console.error("Locker verify failed:", err);
 });
+
 
     // ✅ ALWAYS RETURN SUCCESS AFTER PAYMENT
     return res.json({
@@ -1829,6 +1863,8 @@ async function checkLockerStatus(addr = 0x00, compartmentId = 0) {
 
       const key = `Lock_${compartmentId}`;
       const lockerStatus = statusObj[key];
+
+      console.log("Parsed locker status:", lockerStatus);
 
       resolve(lockerStatus); // "Locked" or "Unlocked"
     });

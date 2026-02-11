@@ -167,6 +167,10 @@ deliveryAgent: {
   index: true,
   default: null
 },
+helpId: {
+  type: String,
+  default: null,
+},
 
 
 
