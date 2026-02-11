@@ -508,17 +508,16 @@ async function verifyLockerClosedUntilLocked(
 
     if (!status) continue;
 
-    if (status.toLowerCase() === "locked") {
-      console.log("🔒 Locker confirmed locked");
-      console.log("About to resolve complaint with helpId:", helpId);
+ if (status.toLowerCase() === "locked") {
+  console.log("🔒 Locker confirmed locked");
 
+  if (helpId) {
+    await resolveComplaint(helpId);
+  }
 
-      if (helpId) {
-        await resolveComplaint(helpId);
-      }
+  return true;
+}
 
-      return true;
-    }
   }
 
   console.warn("⚠️ Locker did not lock within timeout");
@@ -828,6 +827,7 @@ if (!req.body.helpId) {
   }
 });
 
+
 app.post("/terminal/payment/verify", async (req, res) => {
   try {
     const {
@@ -835,7 +835,6 @@ app.post("/terminal/payment/verify", async (req, res) => {
       razorpay_payment_id,
       razorpay_signature,
       parcelId,
-      helpId
     } = req.body;
 
     if (
@@ -883,57 +882,62 @@ app.post("/terminal/payment/verify", async (req, res) => {
         .json({ success: false, error: "Invalid signature" });
     }
 
-    // ✅ PAYMENT IS CONFIRMED — SAVE IMMEDIATELY
+    // ✅ PAYMENT CONFIRMED
     parcel.paymentStatus = "completed";
     parcel.status = "awaiting_pick";
     parcel.razorpayPaymentId = razorpay_payment_id;
     parcel.razorpaySignature = razorpay_signature;
     parcel.paidAt = new Date();
     await parcel.save();
-    // 🔍 Start background locker close verification
 
-
-
-    // 🔓 TRY LOCKER (BEST EFFORT)
     let lockerError = null;
+    let addr = 0x00;
+    let lockNum = null;
 
     try {
       const locker = await Locker.findOne({ lockerId: "L00002" });
       if (!locker) throw new Error("Locker not found");
 
       const compartment = locker.compartments.find(
-        (c) => c.size === parcel.size && !c.isBooked,
+        (c) => c.size === parcel.size && !c.isBooked
       );
+
       if (!compartment) throw new Error("No free compartment");
-      let addr = 0x00;
-      let lockNum = parseInt(compartment.compartmentId);
+
+      lockNum = parseInt(compartment.compartmentId);
+
       if (lockNum > 11) {
         addr = 0x01;
         lockNum -= 12;
       }
-      const sent = await sendUnlock(lockNum, addr);
-      verifyLockerClosedUntilLocked(
-  addr,
-  lockNum,
-  parcel.helpId,
-  1000
-).catch(err => {
-  console.error("Verify loop crashed:", err);
-});
+
+      await sendUnlock(lockNum, addr);
 
       compartment.isBooked = true;
       compartment.currentParcelId = parcel._id;
-
       await locker.save();
 
       parcel.lockerId = locker.lockerId;
       parcel.compartmentId = compartment.compartmentId;
       parcel.UsercompartmentId = parseInt(compartment.compartmentId) + 1;
       await parcel.save();
+
+      // 🔍 Start background locker verification (ONLY ONCE)
+      verifyLockerClosedUntilLocked(
+        addr,
+        lockNum,
+        parcel.helpId,
+        1000
+      ).catch((err) => {
+        console.error("Verify loop crashed:", err);
+      });
+
     } catch (err) {
       lockerError = err.message;
       console.error("⚠️ Locker allocation failed:", err.message);
     }
+
+    // ✅ Send WhatsApp
     await client.messages
       .create({
         to: `whatsapp:+91${parcel.senderPhone}`,
@@ -943,39 +947,35 @@ app.post("/terminal/payment/verify", async (req, res) => {
           2: `${parcel.customId}/qr`,
         }),
       })
-      .then((message) => console.log("✅ WhatsApp Message Sent:", message.sid))
-      .catch((error) => console.error("❌ WhatsApp Message Error:", error));
-    const smsText1 = `Your Drop Point Locker Access Code is ${parcel.accessCode}. Please don't share this with anyone. -DROPPOINT`;
-    const sendResult1 = sendSMS(`91${parcel.senderPhone}`, smsText1);
-    
-verifyLockerClosedUntilLocked({
-  compartmentId: parcel.compartmentId,
-  checkLockerStatus,
-  helpId,
-  maxTries: 10,
-  delayMs: 1500
-})
-.then(() => {
-  return resolveComplaint(helpId);
-})
-.catch(err => {
-  console.error("Locker verify failed:", err);
-});
+      .then((message) =>
+        console.log("✅ WhatsApp Message Sent:", message.sid)
+      )
+      .catch((error) =>
+        console.error("❌ WhatsApp Message Error:", error)
+      );
 
+    // ✅ Send SMS
+    const smsText = `Your Drop Point Locker Access Code is ${parcel.accessCode}. Please don't share this with anyone. -DROPPOINT`;
+    sendSMS(`91${parcel.senderPhone}`, smsText);
 
-    // ✅ ALWAYS RETURN SUCCESS AFTER PAYMENT
+    // ✅ Always return success after payment
     return res.json({
       success: true,
       accessCode: parcel.accessCode,
       lockerId: parcel.lockerId ?? null,
       compartmentId: parcel.compartmentId ?? null,
-      lockerError, // frontend can show warning if needed
+      lockerError,
     });
+
   } catch (err) {
     console.error("❌ verify error:", err);
-    return res.status(500).json({ success: false, error: "Server error" });
+    return res.status(500).json({
+      success: false,
+      error: "Server error",
+    });
   }
 });
+
 
 app.post("/terminal/payment/drop-verify", async (req, res) => {
   try {
