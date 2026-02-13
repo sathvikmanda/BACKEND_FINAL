@@ -13,12 +13,22 @@ async function runDriveSync(baseDir, lockerId) {
     const helpId = session.sessionId;
 
     try {
+      const localDir = path.join(baseDir, helpId);
+
+      console.log("📂 Checking folder:", localDir);
+
+      if (!fs.existsSync(localDir)) {
+        console.warn("⚠️ Folder missing, marking uploaded:", helpId);
+        session.cloudUploaded = true;
+        await session.save();
+        continue;
+      }
+
       await uploadComplaintFolder(baseDir, lockerId, helpId);
 
       session.cloudUploaded = true;
       await session.save();
 
-      const localDir = path.join(baseDir, "recordings", "pickup", helpId);
       fs.rmSync(localDir, { recursive: true, force: true });
 
       console.log("🗑 Deleted local folder:", helpId);
@@ -28,5 +38,8 @@ async function runDriveSync(baseDir, lockerId) {
     }
   }
 }
+
+
+
 
 module.exports = { runDriveSync };

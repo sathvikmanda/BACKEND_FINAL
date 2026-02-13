@@ -28,8 +28,7 @@ const { runDriveSync } = require("./camera/driveSyncWorker");
 const { checkStorageAndSync } = require("./camera/storageMonitor");
 const { appendTimeline } = require("./camera/timelineWriter");
 const { generateClipsForSession } = require("./camera/multiClipProcessor");
-const {uploadComplaintFolder} = require("./camera/googleDriveUploader")
-const BASE_DIR = process.cwd();
+const BASE_DIR = path.join(__dirname, "recordings");
 const session = require("express-session");
 
 app.use(session({
@@ -296,6 +295,11 @@ app.post("/api/otp/send", async (req, res) => {
   }
 });
 
+app.get("/", (req, res) => {
+  res.send("Backend is running 🚀");
+});
+
+
 app.post("/api/otp/resend-whatsapp", async (req, res) => {
   try {
     const phoneRaw = (req.body.phone || "").trim();
@@ -442,7 +446,7 @@ async function bootstrap() {
   await startBuAndPolling();
 
   await initRecordingSystem({
-    baseDir: process.cwd(),
+    baseDir: BASE_DIR,
     cameraRtspUrl: process.env.CAMERA_RTSP,
     io
   });
@@ -454,22 +458,24 @@ async function bootstrap() {
   console.log("🌟 System ready.");
 
   // 🔵 Drive sync every 10 mins
-  setInterval(async () => {
-    try {
-      await runDriveSync(process.cwd(), "L00002");
-    } catch (err) {
-      console.error("Drive sync error:", err);
-    }
-  }, 10 * 60 * 1000);
+  // Drive sync every 10 mins
+setInterval(async () => {
+  try {
+    await runDriveSync(BASE_DIR, "L00002");
+  } catch (err) {
+    console.error("Drive sync error:", err);
+  }
+}, 10 * 60 * 1000);
 
-  // 🟣 Storage monitor every 5 mins
-  setInterval(async () => {
-    try {
-      await checkStorageAndSync(process.cwd(), "L00002");
-    } catch (err) {
-      console.error("Storage monitor error:", err);
-    }
-  }, 5 * 60 * 1000);
+// Storage monitor every 5 mins
+setInterval(async () => {
+  try {
+    await checkStorageAndSync(BASE_DIR, "L00002");
+  } catch (err) {
+    console.error("Storage monitor error:", err);
+  }
+}, 5 * 60 * 1000);
+
 }
 
 
@@ -568,15 +574,20 @@ async function verifyLockerClosedUntilLocked(
 
     if (!status) continue;
 
- if (status.toLowerCase() === "locked") {
+if (status.toLowerCase() === "locked") {
   console.log("🔒 Locker confirmed locked");
+  console.log("⏳ Waiting 5 seconds before finalizing...");
 
   if (helpId) {
     await resolveComplaint(helpId);
   }
 
+  // Wait 5 seconds before returning
+  await new Promise(resolve => setTimeout(resolve, 5000));
+
   return true;
 }
+
 
   }
 
@@ -1550,7 +1561,7 @@ app.post("/api/overstay/payment/verify", async (req, res) => {
 
 app.post("/personal/dropoff", async (req, res) => {
   try {
-    console.log("📦 personal dropoff hit");
+    console.log("📦 new personal dropoff hit");
 
     const { recipientPhone, deliveryPhone, size, hours, helpId } = req.body;
 
@@ -1584,37 +1595,62 @@ app.post("/personal/dropoff", async (req, res) => {
     // ================= LOCKER =================
 
     const locker = await Locker.findOne({ lockerId: "L00002" });
+    console.log("Locker fetched:", locker ? "YES" : "NO");
+
     if (!locker) {
       return res.status(500).json({ error: "Locker not found" });
     }
+    console.log("Locker exists, checking compartments...");
+
 
     const compartment = locker.compartments.find(
       (c) => c.size === size && !c.isBooked
     );
+console.log("Compartment found:", compartment ? compartment.compartmentId : "NONE");
+console.log("Incoming size:", size);
+console.log(
+  "Available compartments:",
+  locker.compartments.map(c => ({
+    id: c.compartmentId,
+    size: c.size,
+    isBooked: c.isBooked
+  }))
+);
+
 
     if (!compartment) {
       return res.status(409).json({
         error: "No free compartment",
       });
     }
+    console.log("Compartment available, proceeding to unlock...");
+
 
     // ================= UNLOCK HARDWARE =================
 
-    let addr = 0x00;
-    let lockNum = parseInt(compartment.compartmentId);
+   console.log("⚡ About to call unlockCompartment");
 
-    if (lockNum > 11) {
-      addr = 0x01;
-      lockNum -= 12;
-    }
+let hw;
 
-    const hw = await unlockCompartment({
-      sendUnlock,
-      checkLockerStatus,
-      compartmentId: compartment.compartmentId,
-    });
+try {
+  hw = await unlockCompartment({
+    sendUnlock,
+    checkLockerStatus,
+    compartmentId: compartment.compartmentId,
+  });
+  console.log("🔓 Unlock returned:", hw);
+} catch (err) {
+  console.error("❌ unlockCompartment threw error:", err);
+  return res.status(500).json({
+    success: false,
+    message: "Unlock crashed",
+  });
+}
 
-    if (!hw.ok) {
+
+    console.log("🔓 Unlock result:", hw);
+
+    if (!hw || !hw.ok) {
       return res.status(504).json({
         success: false,
         message: "Compartment did not unlock",
@@ -1662,67 +1698,11 @@ app.post("/personal/dropoff", async (req, res) => {
     parcel.compartmentId = compartment.compartmentId;
     await parcel.save();
 
-        if (parcel.store_self) {
-      await client.messages.create({
-        to: `whatsapp:+91${parcel.senderPhone}`,
-        from: "whatsapp:+15558076515",
-        contentSid: "HXa7a69894f9567b90c1cacab6827ff46c",
-        contentVariables: JSON.stringify({
-          1: parcel.senderName,
-          2: `mobile/incoming/${parcel.customId}/qr`,
-        }),
-      });
-      const smsText2 = `Item successfully dropped at Locker ${
-        locker.lockerId
-      }. Pickup code: ${
-        parcel.accessCode
-      }. Share this securely. Receiver can also access via ${`https://demo.droppoint.in/${parcel.customId}/qr`} - DROPPOINT`;
-      const sendResult2 = sendSMS(`91${parcel.senderPhone}`, smsText2);
-      console.log(sendResult2);
-    } else {
-      await client.messages.create({
-        to: `whatsapp:+91${parcel.receiverPhone}`,
-        from: "whatsapp:+15558076515",
-        contentSid: "HX4200777a18b1135e502d60b796efe670", // Approved Template SID
-        contentVariables: JSON.stringify({
-          1: parcel.receiverName,
-          2: parcel.senderName,
-          3: `mobile/incoming/${parcel.customId}/qr`,
-          4: `dir/?api=1&destination=${parcel.lockerLat},${parcel.lockerLng}`,
-        }),
-      });
-    }
-    const smsText3 = `Item successfully dropped at Locker ${
-      locker.lockerId
-    }. Pickup code: ${
-      parcel.accessCode
-    }. Share this securely. Receiver can also access via ${`https://demo.droppoint.in/qr?parcelid=${parcel.customId}`} - DROPPOINT`;
+    console.log("✅ Unlock + Parcel created. Sending response to Flutter.");
 
-    const sendResult3 = sendSMS(`91${parcel.senderPhone}`, smsText3);
-    console.log(sendResult3);
+    // ================= SEND RESPONSE IMMEDIATELY =================
 
-
-
-    // ================= START LOCK CLOSE VERIFICATION =================
-
-    verifyLockerClosedUntilLocked(
-      addr,
-      lockNum,
-      helpId,
-      1000
-    )
-      .then((result) => {
-        if (!result) {
-          console.warn("⚠️ Locker did not close in time");
-        }
-      })
-      .catch((err) => {
-        console.error("Verify loop crashed:", err);
-      });
-
-    // ================= RESPONSE =================
-
-    return res.json({
+    res.json({
       success: true,
       customId: parcel.customId,
       accessCode: parcel.accessCode,
@@ -1730,14 +1710,86 @@ app.post("/personal/dropoff", async (req, res) => {
       compartmentId: parcel.compartmentId,
     });
 
+    // ================= BACKGROUND TASKS =================
+
+    setImmediate(async () => {
+      try {
+
+        // ----------- NOTIFICATIONS -----------
+
+        if (parcel.store_self) {
+          await client.messages.create({
+            to: `whatsapp:+91${parcel.senderPhone}`,
+            from: "whatsapp:+15558076515",
+            contentSid: "HXa7a69894f9567b90c1cacab6827ff46c",
+            
+          });
+
+          const smsText2 = `Item successfully dropped at Locker ${
+            locker.lockerId
+          }. Pickup code: ${
+            parcel.accessCode
+          }. Share this securely. Receiver can also access via https://demo.droppoint.in/${parcel.customId}/qr - DROPPOINT`;
+
+          console.log(await sendSMS(`91${parcel.senderPhone}`, smsText2));
+
+        } else {
+
+          await client.messages.create({
+            to: `whatsapp:+91${parcel.receiverPhone}`,
+            from: "whatsapp:+15558076515",
+            contentSid: "HX4200777a18b1135e502d60b796efe670",
+            contentVariables: JSON.stringify({
+              1: parcel.receiverName || "",
+              2: parcel.senderName || "",
+              3: `mobile/incoming/${parcel.customId}/qr`,
+              4: `dir/?api=1&destination=${parcel.lockerLat || ""},${parcel.lockerLng || ""}`,
+            }),
+          });
+        }
+
+        const smsText3 = `Item successfully dropped at Locker ${
+          locker.lockerId
+        }. Pickup code: ${
+          parcel.accessCode
+        }. Share this securely. Receiver can also access via https://demo.droppoint.in/qr?parcelid=${parcel.customId} - DROPPOINT`;
+
+        console.log(await sendSMS(`91${parcel.senderPhone}`, smsText3));
+
+        // ----------- LOCK CLOSE VERIFICATION -----------
+
+        verifyLockerClosedUntilLocked(
+          0x00,
+          parseInt(compartment.compartmentId),
+          helpId,
+          1000
+        )
+          .then((result) => {
+            if (!result) {
+              console.warn("⚠️ Locker did not close in time");
+            }
+          })
+          .catch((err) => {
+            console.error("Verify loop crashed:", err);
+          });
+
+      } catch (err) {
+        console.error("⚠️ Background task error:", err);
+      }
+    });
+
   } catch (err) {
     console.error("❌ personal dropoff error:", err);
-    return res.status(500).json({
-      success: false,
-      error: "Server error",
-    });
+
+    if (!res.headersSent) {
+      return res.status(500).json({
+        success: false,
+        error: "Server error",
+      });
+    }
   }
 });
+
 
 
 
@@ -2684,25 +2736,7 @@ app.get("/payment", (req, res) => {
   res.render("payment.html");
 });
 
-async function bootstrap() {
-  console.log("🚀 Starting terminal server...");
 
-  // 3) start BU + polling
-
-  await startBuAndPolling();
-  await initRecordingSystem({
-      baseDir: "./recordings",
-      cameraRtspUrl: process.env.CAMERA_RTSP,
-      io
-    });
-
-  // 5) finally start HTTP + Socket.IO
-  server.listen(3000, "0.0.0.0", () => {
-    console.log("Server listening on all interfaces :3000");
-  });
-
-  console.log("🌟 System ready.");
-}
 
 bootstrap().catch((err) => {
   console.error("❌ Fatal bootstrap error:", err);

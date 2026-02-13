@@ -11,14 +11,14 @@ let stopTimer = null;
 function startLiveStream(rtspUrl, baseDir) {
   if (liveProcess) {
     viewerCount++;
-    console.log("👥 Viewer joined. Count:", viewerCount);
+    console.log(" Viewer joined. Count:", viewerCount);
     return;
   }
 
   const streamDir = path.join(baseDir, "stream");
   if (!fs.existsSync(streamDir)) fs.mkdirSync(streamDir);
 
-  console.log("▶ Starting LIVE stream");
+  console.log("Starting LIVE stream");
 
   liveProcess = spawn(FFMPEG_PATH, [
   "-rtsp_transport", "tcp",
@@ -55,13 +55,13 @@ function startLiveStream(rtspUrl, baseDir) {
   });
 
   liveProcess.on("close", code => {
-    console.log("⛔ Live stream stopped (code", code + ")");
+    console.log("Live stream stopped (code", code + ")");
     liveProcess = null;
     viewerCount = 0;
   });
 
   liveProcess.on("error", err => {
-    console.error("❌ FFmpeg spawn error:", err);
+    console.error("FFmpeg spawn error:", err);
     liveProcess = null;
     viewerCount = 0;
   });
@@ -78,7 +78,7 @@ function stopLiveStreamDelayed() {
 
   stopTimer = setTimeout(() => {
     if (liveProcess) {
-      console.log("🛑 No viewers — stopping live stream");
+      console.log("No viewers — stopping live stream");
       liveProcess.kill("SIGTERM");
       liveProcess = null;
     }

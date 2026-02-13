@@ -13,13 +13,10 @@ async function initRecordingSystem({ baseDir, cameraRtspUrl, io }) {
   const recordingsDir = path.join(baseDir, "recordings");
   fs.mkdirSync(recordingsDir, { recursive: true });
 
-  console.log("🎥 Camera Recording System Initialized");
-  console.log("   📁", recordingsDir);
-  console.log("   📡", cameraRtspUrl);
-
+  console.log("Camera Recording System Initialized");
   if (io) {
     io.on("connection", socket => {
-      console.log("📡 Client connected:", socket.id);
+      console.log("Client connected:", socket.id);
     });
   }
 

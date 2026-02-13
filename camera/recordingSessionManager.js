@@ -2,40 +2,33 @@ const { spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const RecordingSession = require("../models/RecordingSession");
-
 const activeSessions = new Map();
 
-/**
- * Starts an RTSP recording session
- * @param {string} rtspUrl
- * @param {string} baseDir - base directory of project
- * @param {string} helpId - unique session / complaint id
- * @param {string} lockerId
- */
+
 async function startRecording(rtspUrl, baseDir, helpId, lockerId) {
   // ---------- SAFETY GUARDS ----------
   
   if (!rtspUrl) {
-    console.error("❌ startRecording aborted: rtspUrl missing");
+    console.error("startRecording aborted: rtspUrl missing");
     return;
   }
 
   if (!baseDir) {
-    console.error("❌ startRecording aborted: baseDir missing");
+    console.error("startRecording aborted: baseDir missing");
     return;
   }
 
   if (!helpId) {
-    console.error("❌ startRecording aborted: helpId missing");
+    console.error("startRecording aborted: helpId missing");
     return;
   }
 
   if (activeSessions.has(helpId)) {
-    console.log("⚠️ Recording already active for:", helpId);
+    console.log("Recording already active for:", helpId);
     return;
   }
 
-  console.log("🎬 startRecording called with:", {
+  console.log("startRecording called with:", {
     helpId,
     lockerId,
     rtspUrl,
@@ -43,7 +36,7 @@ async function startRecording(rtspUrl, baseDir, helpId, lockerId) {
   });
 
   // ---------- PATH SETUP ----------
-  const dir = path.join(baseDir, "recordings", helpId);
+  const dir = path.join(baseDir, helpId);
   fs.mkdirSync(dir, { recursive: true });
 
   const outputPath = path.join(dir, "full.mp4");
@@ -80,9 +73,11 @@ async function startRecording(rtspUrl, baseDir, helpId, lockerId) {
   });
 
   activeSessions.set(helpId, {
-    process: ffmpeg,
-    session,
-  });
+  process: ffmpeg,
+  session,
+  baseDir,
+});
+
 
   console.log("🎥 Recording started:", outputPath);
 }
@@ -95,19 +90,19 @@ async function stopRecording(sessionId ) {
   console.log("stopRecording ENTERED for:", sessionId);
 
   if (!sessionId) {
-    console.error("❌ stopRecording aborted: sessionId missing");
+    console.error("stopRecording aborted: sessionId missing");
     return;
   }
 
   const entry = activeSessions.get(sessionId);
   if (!entry) {
-    console.warn("⚠️ No active recording for:", sessionId);
+    console.warn("No active recording for:", sessionId);
     return;
   }
 
-  const { process: ffmpeg, session } = entry;
+  const { process: ffmpeg, session, baseDir } = entry;
 
-  console.log("🛑 Stopping recording for", sessionId);
+  console.log("Stopping recording for", sessionId);
 
 ffmpeg.kill("SIGTERM");
 
@@ -123,7 +118,12 @@ await new Promise(resolve => {
 
   activeSessions.delete(sessionId);
 
-  console.log("✅ Recording finalized for", sessionId);
+  console.log("Recording finalized for", sessionId);
+  const { runDriveSync } = require("./driveSyncWorker");
+
+runDriveSync(baseDir, "L00002")
+  .catch(err => console.error("Immediate upload error:", err));
+
 }
 
 module.exports = {

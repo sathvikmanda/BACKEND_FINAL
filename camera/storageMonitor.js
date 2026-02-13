@@ -1,6 +1,6 @@
 const { exec } = require("child_process");
 
-function getDiskUsage() {
+function checkStorageAndSync() {
   return new Promise((resolve, reject) => {
     exec("df -k /", (err, stdout) => {
       if (err) return reject(err);
@@ -22,4 +22,4 @@ function getDiskUsage() {
   });
 }
 
-module.exports = { getDiskUsage };
+module.exports = { checkStorageAndSync};
