@@ -176,31 +176,52 @@ return {
       }
     );
     // ---------- PARTNER REVENUE FROM LOCKER ----------
-if (locker.partner && parcel.cost > 0) {
+// ---------- PARTNER REVENUE FROM LOCKER ----------
+if (locker.partner && Number(parcel.cost) > 0) {
+
+  const gross = Number(parcel.cost);
 
   const partner = await LocationPartner.findById(locker.partner);
 
-  if (partner && partner.isActive && partner.verificationStatus === "approved") {
+  if (
+    partner &&
+    partner.isActive &&
+    partner.verificationStatus === "approved" &&
+    partner.revenue &&
+    partner.revenue.modelType
+  ) {
 
-    const calc = calculatePartnerRevenue(parcel.cost, partner.revenue);
+    const calc = calculatePartnerRevenue(gross, partner.revenue);
 
-    partner.revenueLedger.push({
+    const partnerShare = Number(calc.partnerShare.toFixed(2));
+    const platformShare = Number(calc.platformShare.toFixed(2));
+
+    const ledgerEntry = {
       parcelId: parcel._id,
-      grossAmount: parcel.cost,
-      platformShare: calc.platformShare,
-      partnerShare: calc.partnerShare,
+      grossAmount: gross,
+      platformShare,
+      partnerShare,
       modelTypeUsed: partner.revenue.modelType,
-      calculationSnapshot: partner.revenue.rules,
+      calculationSnapshot: partner.revenue.rules || {},
       calculatedAt: new Date()
-    });
+    };
 
-    partner.revenueStats.totalGross += parcel.cost;
-    partner.revenueStats.totalPartnerEarned += calc.partnerShare;
-    partner.revenueStats.totalPlatformEarned += calc.platformShare;
-    partner.revenueStats.pendingPayout += calc.partnerShare;
-    partner.revenueStats.lastCalculatedAt = new Date();
-
-    await partner.save();
+    // ✅ atomic style update (safer than doc.save math)
+    await LocationPartner.updateOne(
+      { _id: partner._id },
+      {
+        $push: { revenueLedger: ledgerEntry },
+        $inc: {
+          "revenueStats.totalGross": gross,
+          "revenueStats.totalPartnerEarned": partnerShare,
+          "revenueStats.totalPlatformEarned": platformShare,
+          "revenueStats.pendingPayout": partnerShare
+        },
+        $set: {
+          "revenueStats.lastCalculatedAt": new Date()
+        }
+      }
+    );
   }
 }
 

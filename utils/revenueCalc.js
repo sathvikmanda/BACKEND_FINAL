@@ -1,47 +1,50 @@
 function calculatePartnerRevenue(grossAmount, revenueConfig) {
+
+  const gross = Number(grossAmount);   // ← force number
+
   const { modelType, rules } = revenueConfig;
 
   let partnerShare = 0;
-  let platformShare = grossAmount;
+  let platformShare = gross;
 
   if (modelType === "revenue_share") {
-    const percent = rules.partnerSharePercent || 0;
-    partnerShare = grossAmount * percent / 100;
-    platformShare = grossAmount - partnerShare;
+    const percent = Number(rules.partnerSharePercent) || 0;
+    partnerShare = gross * percent / 100;
+    platformShare = gross - partnerShare;
   }
 
   else if (modelType === "perParcelRate") {
-    partnerShare = rules.perParcelRate || 0;
-    platformShare = grossAmount - partnerShare;
+    partnerShare = Number(rules.perParcelRate) || 0;
+    platformShare = gross - partnerShare;
   }
 
   else if (modelType === "full_partner_profit") {
-    partnerShare = grossAmount;
+    partnerShare = gross;
     platformShare = 0;
   }
 
   else if (modelType === "fixed_rent") {
     partnerShare = 0;
-    platformShare = grossAmount;
+    platformShare = gross;
   }
 
   else if (modelType === "hybrid") {
-    const percent = rules.partnerSharePercent || 0;
-    const base = grossAmount * percent / 100;
-    partnerShare = base + (rules.perParcelRate || 0);
-    platformShare = grossAmount - partnerShare;
+    const percent = Number(rules.partnerSharePercent) || 0;
+    const base = gross * percent / 100;
+    partnerShare = base + (Number(rules.perParcelRate) || 0);
+    platformShare = gross - partnerShare;
   }
 
-  if (rules.capAmount && partnerShare > rules.capAmount) {
-    partnerShare = rules.capAmount;
-    platformShare = grossAmount - partnerShare;
+  const cap = Number(rules.capAmount);
+  if (cap && partnerShare > cap) {
+    partnerShare = cap;
+    platformShare = gross - partnerShare;
   }
 
   return {
-    partnerShare: Math.max(0, partnerShare),
-    platformShare: Math.max(0, platformShare)
+    partnerShare: Math.max(0, Number(partnerShare)),
+    platformShare: Math.max(0, Number(platformShare))
   };
 }
 
 module.exports = calculatePartnerRevenue;
-    
