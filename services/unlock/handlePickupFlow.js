@@ -5,7 +5,7 @@ module.exports = async function handlePickupFlow(
 
 ) {
   try {
-    const { Parcel2, Locker, sendUnlock, checkLockerStatus, User, razorpay, RATE_BY_SIZE, LocationPartner } = deps;
+    const { Parcel2, Locker, sendUnlock, checkLockerStatus, User, razorpay, RATE_BY_SIZE, LocationPartner, calculatePartnerRevenue } = deps;
 
 
     const now = new Date();
