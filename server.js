@@ -577,13 +577,14 @@ async function verifyLockerClosedUntilLocked(
 if (status.toLowerCase() === "locked") {
   console.log("🔒 Locker confirmed locked");
   console.log("⏳ Waiting 5 seconds before finalizing...");
+  await sleep(5000);
 
   if (helpId) {
     await resolveComplaint(helpId);
   }
 
   // Wait 5 seconds before returning
-  await new Promise(resolve => setTimeout(resolve, 5000));
+  
 
   return true;
 }
