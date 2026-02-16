@@ -433,6 +433,7 @@ const resolveFlow = require("./services/unlock/resolveFlow");
 const handleModifyFlow = require("./services/unlock/handleModifyFlow");
 const handleParcelFlow = require("./services/unlock/handleParcelFlow");
 const handleDeliveryPickupFlow = require("./services/unlock/handleDeliveryDropFlow.js");
+const calculatePartnerRevenue = require("./utils/revenueCalc.js");
 const deps = {
   Parcel2,
   Locker,
@@ -446,7 +447,8 @@ const deps = {
   sendSMS,
   Partner,
   client,
-  LocationPartner
+  LocationPartner,
+  calculatePartnerRevenue
 };
 
 

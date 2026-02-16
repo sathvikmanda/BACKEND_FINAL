@@ -175,18 +175,16 @@ return {
         }
       }
     );
+    // ---------- PARTNER REVENUE FROM LOCKER ----------
+if (locker.partner && parcel.cost > 0) {
 
-
-    // ---------- PARTNER REVENUE ----------
-if (parcel.partner && parcel.cost > 0) {
-
-  const partner = await LocationPartner.findById(parcel.partner);
+  const partner = await LocationPartner.findById(locker.partner);
 
   if (partner && partner.isActive && partner.verificationStatus === "approved") {
 
     const calc = calculatePartnerRevenue(parcel.cost, partner.revenue);
 
-    const ledgerEntry = {
+    partner.revenueLedger.push({
       parcelId: parcel._id,
       grossAmount: parcel.cost,
       platformShare: calc.platformShare,
@@ -194,9 +192,7 @@ if (parcel.partner && parcel.cost > 0) {
       modelTypeUsed: partner.revenue.modelType,
       calculationSnapshot: partner.revenue.rules,
       calculatedAt: new Date()
-    };
-
-    partner.revenueLedger.push(ledgerEntry);
+    });
 
     partner.revenueStats.totalGross += parcel.cost;
     partner.revenueStats.totalPartnerEarned += calc.partnerShare;
@@ -208,6 +204,9 @@ if (parcel.partner && parcel.cost > 0) {
   }
 }
 
+
+
+    
 
     return {
       status: 200,
