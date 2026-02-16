@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 
 const ParcelSchema = new mongoose.Schema({
-  senderId: { type: mongoose.Schema.Types.ObjectId, ref: "User"},
+  senderId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
   senderName: String,
   senderPhone: String,
 
@@ -20,7 +20,8 @@ const ParcelSchema = new mongoose.Schema({
   lockerLat: { type: String },
   lockerLng: { type: String },
 
-  accessCode: { type: String, unique: true, required: true },
+  accessCode: { type: String, unique: true, required: true,   index: true },
+  modifyCode:{type: String, unique: true, index: true},
   qrImage: String,
   unlockUrl: String,
 
@@ -43,6 +44,10 @@ const ParcelSchema = new mongoose.Schema({
   type: Boolean,
   default: false
 },
+isDropoff:{
+  type : Boolean,
+  default : false
+},
 razorpayPaymentLink: { type: String },
 paymentStatus: { type: String, default: "pending" },
 
@@ -63,18 +68,22 @@ status: {
   default: "awaiting_payment"
 },
 
-  transitInfo: {
-    courier: String,
-    courierCode: String,
-    shiprocketCourierId: Number,
-    fromLockerId: String,
-    toLockerId: String,
-    shiprocketOrderId: String,
-    rate: mongoose.Decimal128,
-    etd: String,
-    startedAt: Date,
-    deliveredAt: Date
-  },
+transitInfo: {
+  courier: String,
+  courierCode: String,
+  shiprocketCourierId: Number,
+  shiprocketOrderId: String,
+
+  awb: { type: String },   // ✅ REQUIRED
+
+  fromLockerId: String,
+  toLockerId: String,
+  rate: mongoose.Decimal128,
+  etd: String,
+  startedAt: Date,
+  deliveredAt: Date
+},
+
 
   shiprocketQuote: {
     courier_name: String,
@@ -119,7 +128,47 @@ closureReason: {
     "reassigned_no_charge",
     "expired_no_liability"
   ]
-}
+},
+
+// =======================
+// PICKUP (FOR COURIER)
+// =======================
+pickup_name: String,
+pickup_phone: String,
+pickup_address: String,
+pickup_city: String,
+pickup_state: String,
+pickup_pincode: String,
+
+// =======================
+// DELIVERY (FOR COURIER)
+// =======================
+delivery_name: String,
+delivery_phone: String,
+delivery_address: String,
+delivery_city: String,
+delivery_state: String,
+delivery_pincode: String,
+
+// =======================
+// COURIER / PARTNER LINKS
+// =======================
+
+partner: {
+  type: mongoose.Schema.Types.ObjectId,
+  ref: "Partner",
+  index: true,
+  default: null
+},
+
+deliveryAgent: {
+  type: mongoose.Schema.Types.ObjectId,
+  ref: "DeliveryAgent",
+  index: true,
+  default: null
+},
+
+
 
 
 });

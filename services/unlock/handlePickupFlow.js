@@ -5,7 +5,8 @@ module.exports = async function handlePickupFlow(
 
 ) {
   try {
-    const {  Parcel2, Locker, sendUnlock, checkLockerStatus, User, razorpay, RATE_BY_SIZE } = deps;
+    const { Parcel2, Locker, sendUnlock, checkLockerStatus, User, razorpay, RATE_BY_SIZE, LocationPartner } = deps;
+
 
     const now = new Date();
     console.log(accessCode);
@@ -174,6 +175,39 @@ return {
         }
       }
     );
+
+
+    // ---------- PARTNER REVENUE ----------
+if (parcel.partner && parcel.cost > 0) {
+
+  const partner = await LocationPartner.findById(parcel.partner);
+
+  if (partner && partner.isActive && partner.verificationStatus === "approved") {
+
+    const calc = calculatePartnerRevenue(parcel.cost, partner.revenue);
+
+    const ledgerEntry = {
+      parcelId: parcel._id,
+      grossAmount: parcel.cost,
+      platformShare: calc.platformShare,
+      partnerShare: calc.partnerShare,
+      modelTypeUsed: partner.revenue.modelType,
+      calculationSnapshot: partner.revenue.rules,
+      calculatedAt: new Date()
+    };
+
+    partner.revenueLedger.push(ledgerEntry);
+
+    partner.revenueStats.totalGross += parcel.cost;
+    partner.revenueStats.totalPartnerEarned += calc.partnerShare;
+    partner.revenueStats.totalPlatformEarned += calc.platformShare;
+    partner.revenueStats.pendingPayout += calc.partnerShare;
+    partner.revenueStats.lastCalculatedAt = new Date();
+
+    await partner.save();
+  }
+}
+
 
     return {
       status: 200,

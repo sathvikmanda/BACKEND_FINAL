@@ -46,7 +46,12 @@ stats: {
   storeClicks: { type: Number, default: 0 },
   sendClicks: { type: Number, default: 0 },
   dropClicks: { type: Number, default: 0 },
-}
+},
+partner: {
+  type: mongoose.Schema.Types.ObjectId,
+  ref: "LocationPartner",
+  index: true
+},
 });
 
 module.exports = mongoose.model('Locker', LockerSchema);
