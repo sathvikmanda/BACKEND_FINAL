@@ -4,6 +4,16 @@ const CompartmentSchema = new mongoose.Schema({
   compartmentId: String,
   isLocked: { type: Boolean, default: true },
   isBooked: { type: Boolean, default: false },
+
+    status: {
+    type: String,
+    enum: ["available", "reserved", "paid", "occupied"],
+    default: "available",
+    index: true
+  },
+
+  reservedBySession: { type: String, default: null },
+  reservationExpiresAt: { type: Date, default: null },
   isOverstay : {type : Boolean, default: false},
   currentParcelId : {type: String, default : null},
   size: {
@@ -52,6 +62,7 @@ partner: {
   ref: "LocationPartner",
   index: true
 },
+
 });
 
 module.exports = mongoose.model('Locker', LockerSchema);

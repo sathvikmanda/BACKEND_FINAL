@@ -274,8 +274,8 @@ async function bootstrap() {
     io
   });
 
-  server.listen(3000, "0.0.0.0", () => {
-    console.log("Server listening on all interfaces :3000");
+  server.listen(4000, "0.0.0.0", () => {
+    console.log("Server listening on all interfaces :4000");
   });
 
   console.log("🌟 System ready.");
@@ -643,16 +643,20 @@ app.post("/api/whatsapp/send-parcel-link", async (req, res) => {
 });
 
 app.post("/terminal/dropoff", async (req, res) => {
-  console.log("Incoming helpId from Flutter:", req.body.helpId);
-if (!req.body.helpId) {
-  return res.status(400).json({ error: "Missing helpId" });
-}
-
   try {
-    let { size, hours, phone } = req.body;
+    let { size, hours, phone, sessionId, helpId } = req.body;
+
+    if (!helpId) {
+      return res.status(400).json({ error: "Missing helpId" });
+    }
+
+    if (!sessionId) {
+      return res.status(400).json({ error: "Missing sessionId" });
+    }
+
     size = size.toLowerCase();
     const PRICES = { small: 5, medium: 10, large: 20 };
-    console.log(hours)
+
     if (!PRICES[size]) {
       return res.status(400).json({ error: "Invalid size" });
     }
@@ -666,9 +670,27 @@ if (!req.body.helpId) {
       return res.status(400).json({ error: "Invalid phone number" });
     }
 
+    // 🔒 VALIDATE RESERVATION
+    const reservationCheck = await Locker.findOne({
+      lockerId: lockerID,
+      compartments: {
+        $elemMatch: {
+          size,
+          status: "reserved",
+          reservedBySession: sessionId,
+          reservationExpiresAt: { $gt: new Date() }
+        }
+      }
+    });
+
+    if (!reservationCheck) {
+      return res.status(400).json({
+        error: "Reservation expired or invalid"
+      });
+    }
+
     const total = PRICES[size] * hrs;
 
-    // ---------- CREATE PARCEL ----------
     let customId;
     let exists = true;
 
@@ -694,15 +716,12 @@ if (!req.body.helpId) {
       expiresAt,
       status: "awaiting_payment",
       paymentStatus: "pending",
-      helpId: req.body.helpId,
+      helpId,
+      sessionId
     });
-       
 
-
-
-    // ---------- CREATE RAZORPAY ORDER ----------
     const order = await razorpay.orders.create({
-      amount: total * 100, // paise
+      amount: total * 100,
       currency: "INR",
       receipt: parcel.customId,
       notes: {
@@ -714,18 +733,19 @@ if (!req.body.helpId) {
     parcel.razorpayOrderId = order.id;
     await parcel.save();
 
-    // ✅ RETURN JSON FOR FLUTTER
     return res.json({
       parcelId: parcel._id.toString(),
       orderId: order.id,
-      amount: order.amount, // paise
+      amount: order.amount,
       razorpayKeyId: process.env.RAZORPAY_KEY_ID,
     });
+
   } catch (err) {
     console.error("dropoff error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
+
 
 
 app.post("/terminal/payment/verify", async (req, res) => {
@@ -737,25 +757,15 @@ app.post("/terminal/payment/verify", async (req, res) => {
       parcelId,
     } = req.body;
 
-    if (
-      !razorpay_order_id ||
-      !razorpay_payment_id ||
-      !razorpay_signature ||
-      !parcelId
-    ) {
-      return res
-        .status(400)
-        .json({ success: false, error: "Missing parameters" });
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || !parcelId) {
+      return res.status(400).json({ success: false, error: "Missing parameters" });
     }
 
     const parcel = await Parcel2.findById(parcelId);
     if (!parcel) {
-      return res
-        .status(404)
-        .json({ success: false, error: "Parcel not found" });
+      return res.status(404).json({ success: false, error: "Parcel not found" });
     }
 
-    // ✅ Idempotent
     if (parcel.paymentStatus === "completed") {
       return res.json({
         success: true,
@@ -765,24 +775,50 @@ app.post("/terminal/payment/verify", async (req, res) => {
       });
     }
 
-    // ✅ Order match
     if (parcel.razorpayOrderId !== razorpay_order_id) {
       return res.status(400).json({ success: false, error: "Order mismatch" });
     }
 
-    // ✅ Signature verify
     const expectedSignature = crypto
       .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
       .update(`${razorpay_order_id}|${razorpay_payment_id}`)
       .digest("hex");
 
     if (expectedSignature !== razorpay_signature) {
-      return res
-        .status(400)
-        .json({ success: false, error: "Invalid signature" });
+      return res.status(400).json({ success: false, error: "Invalid signature" });
     }
 
-    // ✅ PAYMENT CONFIRMED
+    // 🔒 ATOMIC RESERVED → PAID
+  const locker = await Locker.findOneAndUpdate(
+  {
+    lockerId: parcel.lockerId,
+    compartments: {
+      $elemMatch: {
+        size: parcel.size,
+        reservedBySession: parcel.sessionId,
+        $or: [
+          { status: "reserved" },
+          { status: { $exists: false } }
+        ]
+      }
+    }
+  },
+  {
+    $set: {
+      "compartments.$.status": "paid"
+    }
+  },
+  { new: true }
+);
+
+
+    if (!locker) {
+      return res.status(400).json({
+        success: false,
+        error: "Reservation invalid or expired"
+      });
+    }
+
     parcel.paymentStatus = "completed";
     parcel.status = "awaiting_pick";
     parcel.razorpayPaymentId = razorpay_payment_id;
@@ -790,91 +826,20 @@ app.post("/terminal/payment/verify", async (req, res) => {
     parcel.paidAt = new Date();
     await parcel.save();
 
-    let lockerError = null;
-    let addr = 0x00;
-    let lockNum = null;
-
-    try {
-      const locker = await Locker.findOne({ lockerId: "L00002" });
-      if (!locker) throw new Error("Locker not found");
-
-      const compartment = locker.compartments.find(
-        (c) => c.size === parcel.size && !c.isBooked
-      );
-
-      if (!compartment) throw new Error("No free compartment");
-
-      lockNum = parseInt(compartment.compartmentId);
-
-      if (lockNum > 11) {
-        addr = 0x01;
-        lockNum -= 12;
-      }
-
-      await sendUnlock(lockNum, addr);
-
-      compartment.isBooked = true;
-      compartment.currentParcelId = parcel._id;
-      await locker.save();
-
-      parcel.lockerId = locker.lockerId;
-      parcel.compartmentId = compartment.compartmentId;
-      parcel.UsercompartmentId = parseInt(compartment.compartmentId) + 1;
-      await parcel.save();
-
-      // 🔍 Start background locker verification (ONLY ONCE)
-      verifyLockerClosedUntilLocked(
-        addr,
-        lockNum,
-        parcel.helpId,
-        1000
-      ).catch((err) => {
-        console.error("Verify loop crashed:", err);
-      });
-
-    } catch (err) {
-      lockerError = err.message;
-      console.error("⚠️ Locker allocation failed:", err.message);
-    }
-
-    // ✅ Send WhatsApp
-    await client.messages
-      .create({
-        to: `whatsapp:+91${parcel.senderPhone}`,
-        from: "whatsapp:+15558076515",
-        contentSid: "HXe73f967b34f11b7e3c9a7bbba9b746f6",
-        contentVariables: JSON.stringify({
-          2: `${parcel.customId}/qr`,
-        }),
-      })
-      .then((message) =>
-        console.log("✅ WhatsApp Message Sent:", message.sid)
-      )
-      .catch((error) =>
-        console.error("❌ WhatsApp Message Error:", error)
-      );
-
-    // ✅ Send SMS
-    const smsText = `Your Drop Point Locker Access Code is ${parcel.accessCode}. Please don't share this with anyone. -DROPPOINT`;
-    sendSMS(`91${parcel.senderPhone}`, smsText);
-
-    // ✅ Always return success after payment
     return res.json({
       success: true,
-      accessCode: parcel.accessCode,
-      lockerId: parcel.lockerId ?? null,
-      compartmentId: parcel.compartmentId ?? null,
-      lockerError,
+      accessCode: parcel.accessCode
     });
 
   } catch (err) {
-    console.error("❌ verify error:", err);
+    console.error("verify error:", err);
     return res.status(500).json({
       success: false,
-      error: "Server error",
+      error: "Server error"
     });
   }
 });
+
 
 
 app.post("/terminal/payment/drop-verify", async (req, res) => {
@@ -1390,7 +1355,10 @@ app.post("/personal/dropoff", async (req, res) => {
   try {
     console.log("📦 new personal dropoff hit");
 
-    const { recipientPhone, deliveryPhone, size, hours, helpId } = req.body;
+const { recipientPhone, deliveryPhone, size, hours, helpId } = req.body;
+
+
+
 
     console.log("Incoming helpId:", helpId);
 
@@ -1414,7 +1382,9 @@ app.post("/personal/dropoff", async (req, res) => {
     if (!Number.isInteger(hrs) || hrs < 1) {
       return res.status(400).json({ error: "Invalid hours" });
     }
-
+    const ratePerHour = RATE_BY_SIZE[size];
+const calculatedAmount = ratePerHour * hrs;
+    console.log(calculatedAmount);
     if (!helpId) {
       return res.status(400).json({ error: "Missing helpId" });
     }
@@ -1502,6 +1472,7 @@ try {
       senderPhone: deliveryPhone,
       receiverPhone: recipientPhone,
       size,
+      cost : calculatedAmount,
       lockerId: locker.lockerId,
       hours: hrs,
       terminal_store: true,
@@ -1621,6 +1592,76 @@ try {
 
 
 
+
+
+app.post("/api/kiosk/reserve", async (req, res) => {
+  const { lockerId, size, sessionId } = req.body;
+console.log("RESERVE REQUEST:", req.body);
+
+  const expiry = new Date(Date.now() + 3 * 60 * 1000);
+const lockerDoc = await Locker.findOne({ lockerId });
+console.log("LOCKER FOUND:", lockerDoc?.lockerId);
+console.log("COMPARTMENTS:", lockerDoc?.compartments.map(c => ({
+  id: c.compartmentId,
+  size: c.size,
+  status: c.status
+})));
+ const locker = await Locker.findOneAndUpdate(
+  {
+    lockerId,
+    compartments: {
+      $elemMatch: {
+        size: size.toLowerCase(),
+        $or: [
+          { status: "available" },
+          { status: "unknown" },  
+          { status: { $exists: false } }  // 👈 handles old docs
+        ]
+      }
+    }
+  },
+  {
+    $set: {
+      "compartments.$.status": "reserved",
+      "compartments.$.reservedBySession": sessionId,
+      "compartments.$.reservationExpiresAt": expiry
+    }
+  },
+  { new: true }
+);
+
+
+  if (!locker) {
+    return res.status(409).json({ success: false });
+  }
+
+  res.json({ success: true });
+});
+
+
+setInterval(async () => {
+  await Locker.updateMany(
+    {
+      "compartments.status": "reserved",
+      "compartments.reservationExpiresAt": { $lt: new Date() }
+    },
+    {
+      $set: {
+        "compartments.$[elem].status": "available",
+        "compartments.$[elem].reservedBySession": null,
+        "compartments.$[elem].reservationExpiresAt": null
+      }
+    },
+    {
+      arrayFilters: [
+        {
+          "elem.status": "reserved",
+          "elem.reservationExpiresAt": { $lt: new Date() }
+        }
+      ]
+    }
+  );
+}, 30000);
 
 
 app.get("/locker/:lockerId/available-sizes", async (req, res) => {
@@ -2563,6 +2604,188 @@ app.get("/payment", (req, res) => {
   res.render("payment.html");
 });
 
+const axios = require("axios");
+const { exec } = require("child_process");
+
+
+// =====================
+// ⚙️ CONFIG
+// =====================
+
+const LOCKER_CODE = "L00002";
+const ADMIN_URL = "https://admin.droppoint.in/api/locker-heartbeat";
+const LOCKER_KEY = "supersecretkey";
+
+const HEARTBEAT_INTERVAL = 5000;
+const POST_TIMEOUT = 10000;
+
+const BUFFER_FILE = "./hb-buffer.jsonl";
+
+
+// =====================
+// 🌐 CROSS PLATFORM PING
+// =====================
+
+function pingHost(host = "8.8.8.8") {
+
+  const isWin = process.platform === "win32";
+  const cmd = isWin
+    ? `ping -n 2 ${host}`
+    : `ping -c 2 ${host}`;
+
+  return new Promise(resolve => {
+
+    exec(cmd, { timeout: 6000 }, (err, stdout) => {
+
+      if (err || !stdout) {
+        return resolve({ online:false, latency:null });
+      }
+
+      const txt = stdout.toString();
+      let latency = null;
+
+      if (isWin) {
+        const m = txt.match(/Average = (\d+)/);
+        if (m) latency = parseInt(m[1]);
+      } else {
+        const m = txt.match(/time[=<]\s*([\d.]+)/);
+        if (m) latency = Math.round(parseFloat(m[1]));
+      }
+
+      resolve({
+        online: true,
+        latency
+      });
+
+    });
+
+  });
+}
+
+
+// =====================
+// 📊 STRENGTH
+// =====================
+
+function strength(lat){
+  if (lat == null) return "unknown";
+  if (lat < 50) return "strong";
+  if (lat < 120) return "medium";
+  return "weak";
+}
+
+
+// =====================
+// 💾 OFFLINE BUFFER
+// =====================
+
+function bufferSave(obj){
+  fs.appendFileSync(
+    BUFFER_FILE,
+    JSON.stringify(obj) + "\n"
+  );
+}
+
+async function flushBuffer(){
+
+  if (!fs.existsSync(BUFFER_FILE)) return;
+
+  const lines = fs.readFileSync(BUFFER_FILE,"utf8")
+    .split("\n")
+    .filter(Boolean);
+
+  if (!lines.length) return;
+
+  console.log("📤 Flushing buffer:", lines.length);
+
+  const remaining = [];
+
+  for (const line of lines){
+
+    const data = JSON.parse(line);
+
+    const ok = await postHeartbeat(data, false);
+
+    if (!ok) remaining.push(line);
+  }
+
+  if (remaining.length)
+    fs.writeFileSync(BUFFER_FILE, remaining.join("\n")+"\n");
+  else
+    fs.unlinkSync(BUFFER_FILE);
+}
+
+
+// =====================
+// 📡 POST WITH RETRY
+// =====================
+
+async function postHeartbeat(payload, allowBuffer = true){
+
+  try {
+
+    await axios.post(
+      ADMIN_URL,
+      payload,
+      {
+        timeout: POST_TIMEOUT,
+        headers: {
+          "x-locker-key": LOCKER_KEY
+        }
+      }
+    );
+
+    //console.log("✅ HB sent", payload.internetOnline, payload.latencyMs);
+    return true;
+
+  } catch (e){
+
+    console.log("❌ HB post fail:", e.message);
+
+    if (allowBuffer){
+      bufferSave(payload);
+      console.log("💾 buffered");
+    }
+
+    return false;
+  }
+}
+
+
+// =====================
+// ❤️ HEARTBEAT LOOP
+// =====================
+
+async function heartbeat(){
+
+  const net = await pingHost();
+
+  const payload = {
+    lockerCode: LOCKER_CODE,
+    internetOnline: net.online,
+    latencyMs: net.latency,
+    strength: net.online ? strength(net.latency) : "offline",
+    deviceTime: new Date().toISOString(),
+    agentVersion: "2.0.0"
+  };
+
+  const ok = await postHeartbeat(payload);
+
+  if (ok) {
+    await flushBuffer();
+  }
+
+}
+
+
+// =====================
+// 🚀 START
+// =====================
+
+console.log("🚀 Kiosk Agent v2 started:", LOCKER_CODE);
+
+heartbeat();
+setInterval(heartbeat, HEARTBEAT_INTERVAL);
 
 
 bootstrap().catch((err) => {

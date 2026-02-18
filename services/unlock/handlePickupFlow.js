@@ -88,6 +88,28 @@ module.exports = async function handlePickupFlow(
       await parcel.save();
     }
 
+        if(parcel.paymentStatus === "pending" && parcel.status === "awaiting_pick"){
+          const ratePerHour = RATE_BY_SIZE[parcel.size];
+      return {
+  status: 402,
+  body: {
+    success: false,
+    paymentRequired: true,
+    parcelId: `${parcel._id}`,
+    amount : parseInt(`${parcel.cost}`),
+    usageSummary: {
+      size: parcel.size,
+      extraHours : 0,
+      ratePerHour,
+      storedAt: parcel.createdAt.toISOString(),
+      freeUntil: parcel.expiresAt.toISOString(),
+      now: now.toISOString(),
+    },
+  },
+};
+
+    }
+
     if (parcel.status === "overstay") {
       const nowTime = new Date();
 
