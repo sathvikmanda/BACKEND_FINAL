@@ -2,4 +2,4 @@ env
 .env
 node_modules/
 recordings/
-credentials/
+camera/credentials/
