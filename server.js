@@ -20,7 +20,6 @@ const lockerID = "L00002";
 const Razorpay = require("razorpay");
 const crypto = require("crypto");
 const { initRecordingSystem } = require("./camera/recordingOrchestrator");
-const { activateRecording, deactivateRecording } = require("./camera/recordingSessionManager");
 const { sendSMS } = require("./smartping.js");
 require("dotenv").config();
 const mongo_uri = process.env.MONGOURI
@@ -31,6 +30,13 @@ const { appendTimeline } = require("./camera/timelineWriter");
 const { generateClipsForSession } = require("./camera/multiClipProcessor");
 const BASE_DIR = path.join(__dirname, "recordings");
 const session = require("express-session");
+const CAMERAS = [
+      { id: "cam1", rtsp: process.env.CAMERA_RTSP_1 },
+      { id: "cam2", rtsp: process.env.CAMERA_RTSP_2 },
+    ];
+const { getCameraConfig } = require("./camera/recordingOrchestrator");
+const { activateRecording, deactivateRecording,stopAllRecordingsForSession } = require("./camera/recordingSessionManager");
+
 
 app.use(session({
   secret: "droppoint-2025",
@@ -232,28 +238,21 @@ const RATE_BY_SIZE = {
 
 app.post("/api/complaint", async (req, res) => {
   try {
+
     const helpId = "HR-" + Date.now();
 
-    console.log("📄 Complaint created:", helpId);
-
-    // 1️⃣ Start recording
     await activateRecording(
-  process.env.CAMERA_RTSP,
-  BASE_DIR,
-  helpId,
-  "LOCKER-TEST"
-);
+      BASE_DIR,
+      helpId,
+      "L00002"
+    );
 
-
-    // 2️⃣ Write timeline entry
     appendTimeline(BASE_DIR, helpId, "COMPLAINT CREATED");
 
-    res.json({
-      success: true,
-      helpId,
-    });
+    res.json({ success: true, helpId });
+
   } catch (err) {
-    console.error("❌ Complaint create failed:", err);
+    console.error(err);
     res.status(500).json({ success: false });
   }
 });
@@ -264,41 +263,90 @@ app.post("/api/complaint", async (req, res) => {
 
 
 async function bootstrap() {
-  console.log("🚀 Starting terminal server...");
+  console.log("Starting terminal server...");
 
-  await startBuAndPolling();
-
-  await initRecordingSystem({
-    baseDir: BASE_DIR,
-    cameraRtspUrl: process.env.CAMERA_RTSP,
-    io
-  });
-
-  server.listen(4000, "0.0.0.0", () => {
-    console.log("Server listening on all interfaces :4000");
-  });
-
-  console.log("🌟 System ready.");
-
-  // 🔵 Drive sync every 10 mins
-  // Drive sync every 10 mins
-setInterval(async () => {
   try {
-    await runDriveSync(BASE_DIR, "L00002");
-  } catch (err) {
-    console.error("Drive sync error:", err);
-  }
-}, 10 * 60 * 1000);
+    // ===============================
+    // 1️⃣ Start Locker Hardware
+    // ===============================
+    await startBuAndPolling();
+    console.log("Locker hardware connected");
 
-// Storage monitor every 5 mins
-setInterval(async () => {
-  try {
-    await checkStorageAndSync(BASE_DIR, "L00002");
-  } catch (err) {
-    console.error("Storage monitor error:", err);
-  }
-}, 5 * 60 * 1000);
+    // ===============================
+    // 2️⃣ Validate Camera Config
+    // ===============================
+  
 
+    for (const cam of CAMERAS) {
+      if (!cam.rtsp) {
+        throw new Error(`Missing RTSP URL for ${cam.id} in .env`);
+      }
+    }
+
+    console.log("Cameras configured:");
+    CAMERAS.forEach(cam =>
+      console.log(`${cam.id} → ${cam.rtsp}`)
+    );
+
+    // ===============================
+    // 3️⃣ Initialize Recording System
+    // ===============================
+    await initRecordingSystem({
+     baseDir: BASE_DIR,
+     cameras: CAMERAS,
+      io,
+    });
+
+    console.log("Multi-Camera Recording System Initialized");
+
+    // ===============================
+    // 4️⃣ Start Server
+    // ===============================
+    server.listen(4000, "0.0.0.0", () => {
+      console.log("Server listening on 0.0.0.0:4000");
+    });
+
+    console.log("System ready.");
+
+    // ===============================
+    // 5️⃣ Drive Sync (Every 10 min)
+    // ===============================
+    setInterval(async () => {
+      try {
+        console.log("Running Drive Sync...");
+        await runDriveSync(BASE_DIR, "L00002");
+      } catch (err) {
+        console.error("Drive sync error:", err.message);
+      }
+    }, 10 * 60 * 1000);
+
+    // ===============================
+    // 6️⃣ Storage Monitor (Every 5 min)
+    // ===============================
+    setInterval(async () => {
+      try {
+        console.log("Checking storage...");
+
+        const stats = await checkStorageAndSync();
+
+        console.log(
+          `Disk Usage: ${stats.percentUsed.toFixed(2)}%`
+        );
+
+        if (stats.percentUsed > 85) {
+          console.log("Storage high — forcing Drive sync...");
+          await runDriveSync(BASE_DIR, "L00002");
+        }
+
+      } catch (err) {
+        console.error("Storage monitor error:", err.message);
+      }
+    }, 5 * 60 * 1000);
+
+  } catch (err) {
+    console.error("❌ Fatal bootstrap error:", err.message);
+    process.exit(1);
+  }
 }
 
 
@@ -307,33 +355,20 @@ app.post("/api/complaint/resolve", async (req, res) => {
   try {
     const { helpId } = req.body;
 
-    if (!helpId) {
-      return res.status(400).json({ error: "helpId required" });
+    for (const cam of CAMERAS) {
+      await deactivateRecording(helpId, cam.cameraId);
     }
 
-    console.log("✅ Complaint resolved:", helpId);
-
-    // 1️⃣ Stop recording
-    await deactivateRecording({ sessionId: helpId });
-
-    // 2️⃣ Wait a moment for file flush
     await new Promise(r => setTimeout(r, 2000));
 
-    // 3️⃣ Generate clips
     const clips = await generateClipsForSession(helpId, BASE_DIR);
 
-    // 4️⃣ Timeline entry
     appendTimeline(BASE_DIR, helpId, "COMPLAINT RESOLVED");
-    appendTimeline(BASE_DIR, helpId, `CLIPS GENERATED: ${clips.length}`);
 
-    res.json({
-      success: true,
-      message: "Recording stopped and clips generated",
-      clips,
-    });
+    res.json({ success: true, clips });
 
   } catch (err) {
-    console.error("❌ Complaint resolve failed:", err);
+    console.error(err);
     res.status(500).json({ success: false });
   }
 });
@@ -384,40 +419,45 @@ async function verifyLockerClosedUntilLocked(
   compartmentId,
   helpId,
   delayMs = 1000,
-  maxRetries = 30 // 30 seconds max
+  maxRetries = 30
 ) {
-  console.log("👁️ Watching locker until locked...");
+  console.log("Watching locker until locked...");
 
   for (let i = 0; i < maxRetries; i++) {
     await sleep(delayMs);
 
-    const status = await checkSingleLockStatus(addr, compartmentId);
+    try {
+      const status = await checkSingleLockStatus(addr, compartmentId);
+      console.log("Parsed locker status:", status);
 
-    console.log("Parsed locker status:", status);
+      if (!status) continue;
 
-    if (!status) continue;
+      if (status.toLowerCase() === "locked") {
+        console.log("Locker confirmed locked");
 
-if (status.toLowerCase() === "locked") {
-  console.log("🔒 Locker confirmed locked");
-  console.log("⏳ Waiting 5 seconds before finalizing...");
-  await sleep(5000);
+        await sleep(5000);
 
-  if (helpId) {
-    await resolveComplaint(helpId);
+        if (helpId) {
+          await Promise.all([
+            resolveComplaint(helpId),
+            stopAllRecordingsForSession(helpId),
+            (async () =>
+              appendTimeline(BASE_DIR, helpId, "COMPLAINT RESOLVED"))(),
+            runDriveSync(BASE_DIR, compartmentId)
+          ]);
+        }
+
+        return true;
+      }
+    } catch (err) {
+      console.error("Status check failed:", err.message);
+    }
   }
 
-  // Wait 5 seconds before returning
-  
-
-  return true;
-}
-
-
-  }
-
-  console.warn("⚠️ Locker did not lock within timeout");
+  console.warn("Locker did not lock within timeout");
   return false;
 }
+
 
 
 
@@ -1516,12 +1556,12 @@ try {
         // ----------- NOTIFICATIONS -----------
 
         if (parcel.store_self) {
-          await client.messages.create({
-            to: `whatsapp:+91${parcel.senderPhone}`,
-            from: "whatsapp:+15558076515",
-            contentSid: "HXa7a69894f9567b90c1cacab6827ff46c",
+          // await client.messages.create({
+          //   to: `whatsapp:+91${parcel.senderPhone}`,
+          //   from: "whatsapp:+15558076515",
+          //   contentSid: "HXa7a69894f9567b90c1cacab6827ff46c",
             
-          });
+          // });
 
           const smsText2 = `Item successfully dropped at Locker ${
             locker.lockerId
@@ -1533,17 +1573,17 @@ try {
 
         } else {
 
-          await client.messages.create({
-            to: `whatsapp:+91${parcel.receiverPhone}`,
-            from: "whatsapp:+15558076515",
-            contentSid: "HX4200777a18b1135e502d60b796efe670",
-            contentVariables: JSON.stringify({
-              1: parcel.receiverName || "",
-              2: parcel.senderName || "",
-              3: `mobile/incoming/${parcel.customId}/qr`,
-              4: `dir/?api=1&destination=${parcel.lockerLat || ""},${parcel.lockerLng || ""}`,
-            }),
-          });
+          // await client.messages.create({
+          //   to: `whatsapp:+91${parcel.receiverPhone}`,
+          //   from: "whatsapp:+15558076515",
+          //   contentSid: "HX4200777a18b1135e502d60b796efe670",
+          //   contentVariables: JSON.stringify({
+          //     1: parcel.receiverName || "",
+          //     2: parcel.senderName || "",
+          //     3: `mobile/incoming/${parcel.customId}/qr`,
+          //     4: `dir/?api=1&destination=${parcel.lockerLat || ""},${parcel.lockerLng || ""}`,
+          //   }),
+          // });
         }
 
         const smsText3 = `Item successfully dropped at Locker ${
@@ -1845,20 +1885,20 @@ app.get("/status", (req, res) => {
 async function sendPacket(packet) {
   return new Promise((resolve) => {
     if (!isConnected || !client1) {
-      console.warn("⚠️ No active BU connection");
+      console.warn("No active BU connection");
       return resolve(null);
     }
 
     client1.write(packet, (err) => {
       if (err) {
-        console.error(`❌ Write Error: ${err.message}`);
+        console.error(` Write Error: ${err.message}`);
         return resolve(null);
       }
-      // console.log("📤 Sent:", packet.toString("hex").toUpperCase());
+      // console.log(" Sent:", packet.toString("hex").toUpperCase());
     });
 
     client1.once("data", (data) => {
-      // console.log(`📥 Received: ${data.toString("hex").toUpperCase()}`);
+      // console.log(`Received: ${data.toString("hex").toUpperCase()}`);
       resolve(data);
     });
   });
@@ -1921,7 +1961,7 @@ async function startBuAndPolling() {
 async function checkLockerStatus(addr = 0x00, compartmentId = 0) {
   return new Promise((resolve) => {
     if (!isConnected || !client1) {
-      console.warn("⚠️ No active BU connection");
+      console.warn("No active BU connection");
       return resolve(null);
     }
 
@@ -1931,7 +1971,7 @@ async function checkLockerStatus(addr = 0x00, compartmentId = 0) {
     // Listen for 1 response only
     client1.once("data", (data) => {
       console.log(
-        `📥 Received (checkLockerStatus): ${data.toString("hex").toUpperCase()}`,
+        `Received (checkLockerStatus): ${data.toString("hex").toUpperCase()}`,
       );
 
       const statusObj = parseLockStatus(data);
@@ -1950,16 +1990,20 @@ async function checkLockerStatus(addr = 0x00, compartmentId = 0) {
     // Write packet
     client1.write(packet, (err) => {
       if (err) {
-        console.error(`❌ Write Error: ${err.message}`);
+        console.error(`Write Error: ${err.message}`);
         return resolve(null);
       }
       console.log(
-        "📤 Sent (checkLockerStatus):",
+        "Sent (checkLockerStatus):",
         packet.toString("hex").toUpperCase(),
       );
     });
   });
 }
+
+
+
+
 const { getShiprocketEstimate } = require("./services/shiprocket.js");
 
 // POST /api/delivery/estimate

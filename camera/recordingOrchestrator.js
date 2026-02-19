@@ -1,26 +1,30 @@
-const fs = require("fs");
 const path = require("path");
-
+const fs = require("fs");
 let SYSTEM_READY = false;
+let CAMERA_CONFIG = [];
 
-async function initRecordingSystem({ baseDir, cameraRtspUrl, io }) {
+async function initRecordingSystem({ baseDir, cameras, io }) {
   if (SYSTEM_READY) return;
 
-  if (!cameraRtspUrl) {
-    throw new Error("CAMERA_RTSP is missing");
+  if (!cameras || cameras.length === 0) {
+    throw new Error("No cameras configured");
   }
+
+  CAMERA_CONFIG = cameras;
 
   const recordingsDir = path.join(baseDir, "recordings");
   fs.mkdirSync(recordingsDir, { recursive: true });
 
-  console.log("Camera Recording System Initialized");
-  if (io) {
-    io.on("connection", socket => {
-      console.log("Client connected:", socket.id);
-    });
-  }
+  console.log("Multi-Camera Recording System Initialized");
 
   SYSTEM_READY = true;
 }
 
-module.exports = { initRecordingSystem };
+function getCameraConfig() {
+  return CAMERA_CONFIG;
+}
+
+module.exports = {
+  initRecordingSystem,
+  getCameraConfig
+};

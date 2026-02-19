@@ -1,12 +1,37 @@
 const mongoose = require("mongoose");
 
 const recordingSessionSchema = new mongoose.Schema({
-  sessionId: { type: String, required: true, index: true },
-  lockerId: { type: String, required: true },
+  sessionId: { 
+    type: String, 
+    required: true, 
+    index: true 
+  },
 
-  rawVideoFile: { type: String, required: true },
+  cameraId: { 
+    type: String, 
+    required: true,
+    index: true
+  },
 
-  startedAt: { type: Date, required: true },
+  cameraName: { 
+    type: String 
+  },
+
+  lockerId: { 
+    type: String, 
+    required: true 
+  },
+
+  rawVideoFile: { 
+    type: String, 
+    required: true 
+  },
+
+  startedAt: { 
+    type: Date, 
+    required: true 
+  },
+
   endedAt: Date,
 
   status: {
@@ -14,7 +39,23 @@ const recordingSessionSchema = new mongoose.Schema({
     enum: ["active", "completed"],
     default: "active",
   },
+
+  cloudUploaded: {
+    type: Boolean,
+    default: false,
+    index: true
+  },
+
+  uploadedAt: Date
+
+}, {
+  timestamps: true
 });
+
+recordingSessionSchema.index(
+  { sessionId: 1, cameraId: 1 },
+  { unique: true }
+);
 
 module.exports = mongoose.model(
   "RecordingSession",

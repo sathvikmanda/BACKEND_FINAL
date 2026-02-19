@@ -2,131 +2,142 @@ const { spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const RecordingSession = require("../models/RecordingSession");
+const { getCameraConfig } = require("./recordingOrchestrator");
+
 const activeSessions = new Map();
+async function spawnRecording(rtspUrl, baseDir, helpId, lockerId, cameraId) {
+  const sessionDir = path.join(baseDir, "recordings", helpId);
+  fs.mkdirSync(sessionDir, { recursive: true });
+
+  const outputFile = path.join(
+  sessionDir,
+  `${cameraId}_${Date.now()}.mp4`
+);
 
 
-async function startRecording(rtspUrl, baseDir, helpId, lockerId) {
-  // ---------- SAFETY GUARDS ----------
-  
-  if (!rtspUrl) {
-    console.error("startRecording aborted: rtspUrl missing");
-    return;
-  }
 
-  if (!baseDir) {
-    console.error("startRecording aborted: baseDir missing");
-    return;
-  }
+  const key = helpId + "_" + cameraId;
 
-  if (!helpId) {
-    console.error("startRecording aborted: helpId missing");
-    return;
-  }
+  console.log("Starting recording:", key);
 
-  if (activeSessions.has(helpId)) {
-    console.log("Recording already active for:", helpId);
-    return;
-  }
-
-  console.log("startRecording called with:", {
-    helpId,
-    lockerId,
-    rtspUrl,
-    baseDir,
-  });
-
-  // ---------- PATH SETUP ----------
-  const dir = path.join(baseDir, helpId);
-  fs.mkdirSync(dir, { recursive: true });
-
-  const outputPath = path.join(dir, "full.mp4");
-
-  // ---------- DB ENTRY ----------
-  const session = await RecordingSession.create({
-    sessionId: helpId,
-    lockerId,
-    rawVideoFile: "full.mp4",
-    startedAt: new Date(),
-    status: "active",
-  });
-
-  // ---------- FFMPEG ----------
   const ffmpeg = spawn("ffmpeg", [
-    "-rtsp_transport", "tcp",
-    "-fflags", "+genpts",
-    "-use_wallclock_as_timestamps", "1",
-    "-i", rtspUrl,
-    "-c:v", "libx264",
-    "-preset", "veryfast",
-    "-pix_fmt", "yuv420p",
-    "-c:a", "aac",
-    "-movflags", "+faststart",
-    outputPath,
-  ]);
-
-  ffmpeg.stderr.on("data", d =>
-    console.log("[FFMPEG]", d.toString())
-  );
-
-  ffmpeg.on("error", err => {
-    console.error("❌ FFMPEG error:", err);
-  });
-
-  activeSessions.set(helpId, {
-  process: ffmpeg,
-  session,
-  baseDir,
+  "-fflags", "+genpts",
+  "-rtsp_transport", "tcp",
+  "-i", rtspUrl,
+  "-c:v", "libx264",
+  "-preset", "veryfast",
+  "-c:a", "aac",
+  "-movflags", "+faststart",
+  "-rtsp_transport", "tcp",
+  "-fflags", "+genpts",
+  "-use_wallclock_as_timestamps", "1","-movflags", "+frag_keyframe+empty_moov+default_base_moof",
+    outputFile
+], {
+  stdio: ["pipe", "pipe", "pipe"]
 });
 
 
-  console.log("🎥 Recording started:", outputPath);
-}
 
-/**
- * Stops an active recording
- * @param {{ sessionId: string }}
- */
-async function stopRecording(sessionId ) {
-  console.log("stopRecording ENTERED for:", sessionId);
-
-  if (!sessionId) {
-    console.error("stopRecording aborted: sessionId missing");
-    return;
-  }
-
-  const entry = activeSessions.get(sessionId);
-  if (!entry) {
-    console.warn("No active recording for:", sessionId);
-    return;
-  }
-
-  const { process: ffmpeg, session, baseDir } = entry;
-
-  console.log("Stopping recording for", sessionId);
-
-ffmpeg.kill("SIGTERM");
-
-await new Promise(resolve => {
-  ffmpeg.on("close", resolve);
-});
-
-
-  await RecordingSession.findByIdAndUpdate(session._id, {
-    endedAt: new Date(),
-    status: "completed",
+  ffmpeg.stderr.on("data", data => {
+    console.log(`[FFMPEG ${cameraId}]`, data.toString());
   });
 
-  activeSessions.delete(sessionId);
+  ffmpeg.on("close", code => {
+    console.log(`FFmpeg exited for ${key} with code ${code}`);
+  });
 
-  console.log("Recording finalized for", sessionId);
-  const { runDriveSync } = require("./driveSyncWorker");
+  activeSessions.set(key, {
+    process: ffmpeg,
+    outputFile
+  });
 
-runDriveSync(baseDir, "L00002")
-  .catch(err => console.error("Immediate upload error:", err));
+  // Optional: Save DB entry
+ await RecordingSession.create({
+  sessionId: helpId,           // FIX
+  helpId,
+  lockerId,
+  cameraId,
+  rawVideoFile: outputFile,    // FIX
+  startedAt: new Date()
+});
 
 }
+
+
+async function startRecording(baseDir, helpId, lockerId) {
+  const cameras = getCameraConfig();
+
+  if (!cameras || cameras.length === 0) {
+    console.error(" No cameras configured");
+    return;
+  }
+
+  for (const cam of cameras) {
+    if (!cam.rtsp) {
+      console.error(` Missing RTSP URL for camera: ${cam.id}`);
+      continue;
+    }
+
+    await spawnRecording(
+      cam.rtsp,
+      baseDir,
+      helpId,
+      lockerId,
+      cam.id
+    );
+  }
+}
+
+
+
+async function stopRecording({ helpId, cameraId }) {
+  const key = helpId + "_" + cameraId;
+  const entry = activeSessions.get(key);
+  if (!entry) return;
+
+  const ffmpeg = entry.process;
+
+  console.log("Stopping:", key);
+
+  return new Promise(resolve => {
+    ffmpeg.on("close", code => {
+      console.log(`FFmpeg exited for ${key} with code ${code}`);
+      activeSessions.delete(key);
+      console.log("Recording finalized:", key);
+      resolve();
+    });
+
+    ffmpeg.stdin.write("q");   // graceful stop
+    ffmpeg.stdin.end();
+  });
+}
+
+
+async function stopAllRecordingsForSession(helpId) {
+
+  const sessions = await RecordingSession.find({
+    sessionId: helpId,
+    status: "active"
+  });
+
+  for (const session of sessions) {
+
+    await stopRecording({
+      helpId,
+      cameraId: session.cameraId
+    });
+
+    session.status = "completed";
+    session.endedAt = new Date();
+    session.cloudUploaded = false;   
+    await session.save();
+  }
+}
+
+
 
 module.exports = {
   activateRecording: startRecording,
   deactivateRecording: stopRecording,
+  stopAllRecordingsForSession
 };

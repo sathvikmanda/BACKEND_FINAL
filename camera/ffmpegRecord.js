@@ -11,7 +11,7 @@ export function recordClip({ rtspUrl, baseDir, helpId, type }) {
   const filename = `${type}_${helpId}_${Date.now()}.mp4`;
   const outputPath = path.join(recordingsDir, filename);
 
-  console.log("🎥 Recording", filename);
+  console.log(" Recording", filename);
 
   const p = spawn(FFMPEG_PATH, [
     "-rtsp_transport", "tcp",
@@ -31,7 +31,11 @@ export function recordClip({ rtspUrl, baseDir, helpId, type }) {
     "-t", "10",
     "-movflags", "+faststart",
     outputPath
-  ]);
+  ],{
+    stdio: ["pipe", "ignore", "pipe"]  
+  }
+
+  );
 
   return new Promise(resolve => {
     p.on("close", () => resolve(filename));
