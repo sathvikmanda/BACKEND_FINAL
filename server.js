@@ -22,7 +22,7 @@ const crypto = require("crypto");
 const { initRecordingSystem } = require("./camera/recordingOrchestrator");
 const { sendSMS } = require("./smartping.js");
 require("dotenv").config();
-const mongo_uri = process.env.MONGOURI
+const mongo_uri = process.env.mongo_uri
 const twilio = require("twilio");
 const { runDriveSync } = require("./camera/driveSyncWorker");
 const { checkStorageAndSync } = require("./camera/storageMonitor");
@@ -31,11 +31,11 @@ const { generateClipsForSession } = require("./camera/multiClipProcessor");
 const BASE_DIR = path.join(__dirname, "recordings");
 const session = require("express-session");
 const CAMERAS = [
-      { id: "cam1", rtsp: process.env.CAMERA_RTSP_1 },
-      { id: "cam2", rtsp: process.env.CAMERA_RTSP_2 },
-    ];
+  { id: "cam1", rtsp: process.env.CAMERA_RTSP_1 },
+  { id: "cam2", rtsp: process.env.CAMERA_RTSP_2 },
+];
 const { getCameraConfig } = require("./camera/recordingOrchestrator");
-const { activateRecording, deactivateRecording,stopAllRecordingsForSession } = require("./camera/recordingSessionManager");
+const { activateRecording, deactivateRecording, stopAllRecordingsForSession } = require("./camera/recordingSessionManager");
 
 
 app.use(session({
@@ -47,7 +47,7 @@ app.use(session({
 
 const {
   TWILIO_ACCOUNT_SID,
-  TWILIO_AUTH_TOKEN,                                                         
+  TWILIO_AUTH_TOKEN,
   TWILIO_VERIFY_SERVICE_SID,
   TWILIO_WHATSAPP_VERIFY_SID,
 } = process.env;
@@ -275,7 +275,7 @@ async function bootstrap() {
     // ===============================
     // 2️⃣ Validate Camera Config
     // ===============================
-  
+
 
     for (const cam of CAMERAS) {
       if (!cam.rtsp) {
@@ -292,8 +292,8 @@ async function bootstrap() {
     // 3️⃣ Initialize Recording System
     // ===============================
     await initRecordingSystem({
-     baseDir: BASE_DIR,
-     cameras: CAMERAS,
+      baseDir: BASE_DIR,
+      cameras: CAMERAS,
       io,
     });
 
@@ -433,7 +433,7 @@ async function verifyLockerClosedUntilLocked(
       if (!status) continue;
 
       if (status.toLowerCase() === "locked") {
-        console.log("Locker confirmed locked"); 
+        console.log("Locker confirmed locked");
 
         await sleep(5000);
 
@@ -477,7 +477,7 @@ const calculatePartnerRevenue = require("./utils/revenueCalc.js");
 const deps = {
   Parcel2,
   Locker,
-  User, 
+  User,
   sendUnlock,
   checkLockerStatus,
   razorpay,
@@ -504,7 +504,7 @@ app.post("/api/locker/unlock-code", express.json(), async (req, res) => {
     } else if (flow === "PARCEL") {
       result = await handleParcelFlow(accessCode, deps);
     } else if (flow === "DELIVERY_PICKUP") {
-      result = await handleDeliveryPickupFlow(accessCode,deps);
+      result = await handleDeliveryPickupFlow(accessCode, deps);
     } else {
       return res.status(404).json({
         success: false,
@@ -530,17 +530,17 @@ app.post("/api/locker/scan", express.json(), async (req, res) => {
     const flow = await resolveFlow(accessCode, { Parcel2 });
 
     let result;
-   if (flow === "MODIFY") {
-  result = await handleModifyFlow(accessCode, deps);
-} else if (flow === "PARCEL") {
-  // 🔥 USE PICKUP FLOW (HAS OVERSTAY LOGIC)
-  result = await handlePickupFlow(accessCode, deps);
-} else {
-  return res.status(404).json({
-    success: false,
-    message: "Invalid code",
-  });
-}
+    if (flow === "MODIFY") {
+      result = await handleModifyFlow(accessCode, deps);
+    } else if (flow === "PARCEL") {
+      // 🔥 USE PICKUP FLOW (HAS OVERSTAY LOGIC)
+      result = await handlePickupFlow(accessCode, deps);
+    } else {
+      return res.status(404).json({
+        success: false,
+        message: "Invalid code",
+      });
+    }
 
 
     return res.status(result.status).json(result.body);
@@ -710,26 +710,6 @@ app.post("/terminal/dropoff", async (req, res) => {
     if (!/^[6-9]\d{9}$/.test(phone)) {
       return res.status(400).json({ error: "Invalid phone number" });
     }
-
-    // 🔒 VALIDATE RESERVATION
-    // const reservationCheck = await Locker.findOne({
-    //   lockerId: lockerID,
-    //   compartments: {
-    //     $elemMatch: {
-    //       size,
-    //       status: "reserved",
-    //       reservedBySession: sessionId,
-    //       reservationExpiresAt: { $gt: new Date() }
-    //     }
-    //   }
-    // });
-
-
-    // if (!reservationCheck) {
-    //   return res.status(400).json({
-    //     error: "Reservation expired or invalid"
-    //   });
-    // }
 
     const total = PRICES[size] * hrs;
 
@@ -1051,7 +1031,7 @@ app.post("/terminal/payment/drop-verify", async (req, res) => {
         error: "Failed to unlock locker",
       });
     }
-console.log("About to resolve complaint with helpId:", helpId);
+    console.log("About to resolve complaint with helpId:", helpId);
 
     // 🔍 START WATCH LOOP (non-blocking)
     verifyLockerClosedUntilLocked(
@@ -1207,7 +1187,7 @@ app.post("/api/locker/:lockerId/click", async (req, res) => {
 
 const { unlockCompartment } = require("./services/locker/lockerHardware.js")
 
-app.post("/delivery/dropoff", async (req,res) => {
+app.post("/delivery/dropoff", async (req, res) => {
   try {
     console.log("📦 dropoff hit");
 
@@ -1250,12 +1230,12 @@ app.post("/delivery/dropoff", async (req,res) => {
     }
     const hrs = Number(partner.maxStorageHours);
 
-if (!Number.isFinite(hrs) || hrs <= 0) {
-  return res.status(400).json({
-    error: "Partner maxStorageHours invalid"
-  });
-}
-console.log("HOURS:", hrs);
+    if (!Number.isFinite(hrs) || hrs <= 0) {
+      return res.status(400).json({
+        error: "Partner maxStorageHours invalid"
+      });
+    }
+    console.log("HOURS:", hrs);
 
 
 
@@ -1309,21 +1289,21 @@ console.log("HOURS:", hrs);
         error: "No free compartment",
       });
     }
-      const hw = await unlockCompartment({
+    const hw = await unlockCompartment({
       sendUnlock,
       checkLockerStatus,
       compartmentId: compartment.compartmentId
     });
 
-  
 
-if (!hw.ok) {
-  return res.status(504).json({
-    success: false,
-    message: "Compartment did not unlock",
-    details: hw
-  });
-}
+
+    if (!hw.ok) {
+      return res.status(504).json({
+        success: false,
+        message: "Compartment did not unlock",
+        details: hw
+      });
+    }
 
     // ================= CREATE PARCEL =================
 
@@ -1372,14 +1352,14 @@ if (!hw.ok) {
     /// POST - UNLOCK CHECK
 
     verifyLockerClosedUntilLocked({
-  compartmentId: compartment.compartmentId,
-  checkLockerStatus,
-  req,
-  maxTries: 3,
-  delayMs: 1000
-}).catch(err => {
-  console.error("Locker verify failed:", err);
-});
+      compartmentId: compartment.compartmentId,
+      checkLockerStatus,
+      req,
+      maxTries: 3,
+      delayMs: 1000
+    }).catch(err => {
+      console.error("Locker verify failed:", err);
+    });
     // ================= RESPONSE =================
 
 
@@ -1479,7 +1459,7 @@ app.post("/personal/dropoff", async (req, res) => {
   try {
     console.log("📦 new personal dropoff hit");
 
-const { recipientPhone, deliveryPhone, size, hours, helpId } = req.body;
+    const { recipientPhone, deliveryPhone, size, hours, helpId } = req.body;
 
 
 
@@ -1507,7 +1487,7 @@ const { recipientPhone, deliveryPhone, size, hours, helpId } = req.body;
       return res.status(400).json({ error: "Invalid hours" });
     }
     const ratePerHour = RATE_BY_SIZE[size];
-const calculatedAmount = ratePerHour * hrs;
+    const calculatedAmount = ratePerHour * hrs;
     console.log(calculatedAmount);
     if (!helpId) {
       return res.status(400).json({ error: "Missing helpId" });
@@ -1527,16 +1507,16 @@ const calculatedAmount = ratePerHour * hrs;
     const compartment = locker.compartments.find(
       (c) => c.size === size && !c.isBooked
     );
-console.log("Compartment found:", compartment ? compartment.compartmentId : "NONE");
-console.log("Incoming size:", size);
-console.log(
-  "Available compartments:",
-  locker.compartments.map(c => ({
-    id: c.compartmentId,
-    size: c.size,
-    isBooked: c.isBooked
-  }))
-);
+    console.log("Compartment found:", compartment ? compartment.compartmentId : "NONE");
+    console.log("Incoming size:", size);
+    console.log(
+      "Available compartments:",
+      locker.compartments.map(c => ({
+        id: c.compartmentId,
+        size: c.size,
+        isBooked: c.isBooked
+      }))
+    );
 
 
     if (!compartment) {
@@ -1549,24 +1529,24 @@ console.log(
 
     // ================= UNLOCK HARDWARE =================
 
-   console.log("⚡ About to call unlockCompartment");
+    console.log("⚡ About to call unlockCompartment");
 
-let hw;
+    let hw;
 
-try {
-  hw = await unlockCompartment({
-    sendUnlock,
-    checkLockerStatus,
-    compartmentId: compartment.compartmentId,
-  });
-  console.log("🔓 Unlock returned:", hw);
-} catch (err) {
-  console.error("❌ unlockCompartment threw error:", err);
-  return res.status(500).json({
-    success: false,
-    message: "Unlock crashed",
-  });
-}
+    try {
+      hw = await unlockCompartment({
+        sendUnlock,
+        checkLockerStatus,
+        compartmentId: compartment.compartmentId,
+      });
+      console.log("🔓 Unlock returned:", hw);
+    } catch (err) {
+      console.error("❌ unlockCompartment threw error:", err);
+      return res.status(500).json({
+        success: false,
+        message: "Unlock crashed",
+      });
+    }
 
 
     console.log("🔓 Unlock result:", hw);
@@ -1596,7 +1576,7 @@ try {
       senderPhone: deliveryPhone,
       receiverPhone: recipientPhone,
       size,
-      cost : calculatedAmount,
+      cost: calculatedAmount,
       lockerId: locker.lockerId,
       hours: hrs,
       terminal_store: true,
@@ -1644,14 +1624,12 @@ try {
           //   to: `whatsapp:+91${parcel.senderPhone}`,
           //   from: "whatsapp:+15558076515",
           //   contentSid: "HXa7a69894f9567b90c1cacab6827ff46c",
-            
+
           // });
 
-          const smsText2 = `Item successfully dropped at Locker ${
-            locker.lockerId
-          }. Pickup code: ${
-            parcel.accessCode
-          }. Share this securely. Receiver can also access via https://demo.droppoint.in/${parcel.customId}/qr - DROPPOINT`;
+          const smsText2 = `Item successfully dropped at Locker ${locker.lockerId
+            }. Pickup code: ${parcel.accessCode
+            }. Share this securely. Receiver can also access via https://demo.droppoint.in/${parcel.customId}/qr - DROPPOINT`;
 
           console.log(await sendSMS(`91${parcel.senderPhone}`, smsText2));
 
@@ -1670,11 +1648,9 @@ try {
           // });
         }
 
-        const smsText3 = `Item successfully dropped at Locker ${
-          locker.lockerId
-        }. Pickup code: ${
-          parcel.accessCode
-        }. Share this securely. Receiver can also access via https://demo.droppoint.in/qr?parcelid=${parcel.customId} - DROPPOINT`;
+        const smsText3 = `Item successfully dropped at Locker ${locker.lockerId
+          }. Pickup code: ${parcel.accessCode
+          }. Share this securely. Receiver can also access via https://demo.droppoint.in/qr?parcelid=${parcel.customId} - DROPPOINT`;
 
         console.log(await sendSMS(`91${parcel.senderPhone}`, smsText3));
 
@@ -1720,39 +1696,39 @@ try {
 
 app.post("/api/kiosk/reserve", async (req, res) => {
   const { lockerId, size, sessionId } = req.body;
-console.log("RESERVE REQUEST:", req.body);
+  console.log("RESERVE REQUEST:", req.body);
 
   const expiry = new Date(Date.now() + 3 * 60 * 1000);
-const lockerDoc = await Locker.findOne({ lockerId });
-console.log("LOCKER FOUND:", lockerDoc?.lockerId);
-console.log("COMPARTMENTS:", lockerDoc?.compartments.map(c => ({
-  id: c.compartmentId,
-  size: c.size,
-  status: c.status
-})));
- const locker = await Locker.findOneAndUpdate(
-  {
-    lockerId,
-    compartments: {
-      $elemMatch: {
-        size: size.toLowerCase(),
-        $or: [
-          { status: "available" },
-          { status: "unknown" },  
-          { status: { $exists: false } }  // 👈 handles old docs
-        ]
+  const lockerDoc = await Locker.findOne({ lockerId });
+  console.log("LOCKER FOUND:", lockerDoc?.lockerId);
+  console.log("COMPARTMENTS:", lockerDoc?.compartments.map(c => ({
+    id: c.compartmentId,
+    size: c.size,
+    status: c.status
+  })));
+  const locker = await Locker.findOneAndUpdate(
+    {
+      lockerId,
+      compartments: {
+        $elemMatch: {
+          size: size.toLowerCase(),
+          $or: [
+            { status: "available" },
+            { status: "unknown" },
+            { status: { $exists: false } }  // 👈 handles old docs
+          ]
+        }
       }
-    }
-  },
-  {
-    $set: {
-      "compartments.$.status": "reserved",
-      "compartments.$.reservedBySession": sessionId,
-      "compartments.$.reservationExpiresAt": expiry
-    }
-  },
-  { new: true }
-);
+    },
+    {
+      $set: {
+        "compartments.$.status": "reserved",
+        "compartments.$.reservedBySession": sessionId,
+        "compartments.$.reservationExpiresAt": expiry
+      }
+    },
+    { new: true }
+  );
 
 
   if (!locker) {
@@ -2352,7 +2328,8 @@ app.post("/api/parcel/select-courier/:id", async (req, res) => {
 
 app.post('/api/razorpay/order', express.json(), async (req, res) => {
   try {
-    const { parcelId } = req.body;
+    console.log("HOY");
+    const { parcelId, amount } = req.body;
 
     if (!parcelId) {
       return res.status(400).json({
@@ -2367,7 +2344,9 @@ app.post('/api/razorpay/order', express.json(), async (req, res) => {
         message: 'Parcel not found',
       });
     }
-
+    console.log(amount);
+    parcel.cost = amount;
+    await parcel.save();
     if (!parcel.cost || parcel.cost <= 0) {
       return res.status(400).json({
         message: 'Invalid overstay amount',
@@ -2381,11 +2360,13 @@ app.post('/api/razorpay/order', express.json(), async (req, res) => {
     });
 
     return res.status(200).json({
+
       key: process.env.RAZORPAY_KEY_ID,
       orderId: order.id,
       amount: order.amount,
     });
   } catch (err) {
+    console.log(err);
     console.error('RAZORPAY ORDER ERROR:', err);
 
     return res.status(500).json({
@@ -2660,11 +2641,11 @@ app.get("/api/lockers/all-locked", async (req, res) => {
     const addrs = (
       req.query.addrs
         ? String(req.query.addrs)
-            .split(",")
-            .map((s) => {
-              s = s.trim();
-              return s.startsWith("0x") ? parseInt(s, 16) : parseInt(s, 10);
-            })
+          .split(",")
+          .map((s) => {
+            s = s.trim();
+            return s.startsWith("0x") ? parseInt(s, 16) : parseInt(s, 10);
+          })
         : [0x00]
     ) // default: two BUs
       .filter((n) => Number.isInteger(n) && n >= 0);
@@ -2766,7 +2747,7 @@ function pingHost(host = "8.8.8.8") {
     exec(cmd, { timeout: 6000 }, (err, stdout) => {
 
       if (err || !stdout) {
-        return resolve({ online:false, latency:null });
+        return resolve({ online: false, latency: null });
       }
 
       const txt = stdout.toString();
@@ -2795,7 +2776,7 @@ function pingHost(host = "8.8.8.8") {
 // 📊 STRENGTH
 // =====================
 
-function strength(lat){
+function strength(lat) {
   if (lat == null) return "unknown";
   if (lat < 50) return "strong";
   if (lat < 120) return "medium";
@@ -2807,18 +2788,18 @@ function strength(lat){
 // 💾 OFFLINE BUFFER
 // =====================
 
-function bufferSave(obj){
+function bufferSave(obj) {
   fs.appendFileSync(
     BUFFER_FILE,
     JSON.stringify(obj) + "\n"
   );
 }
 
-async function flushBuffer(){
+async function flushBuffer() {
 
   if (!fs.existsSync(BUFFER_FILE)) return;
 
-  const lines = fs.readFileSync(BUFFER_FILE,"utf8")
+  const lines = fs.readFileSync(BUFFER_FILE, "utf8")
     .split("\n")
     .filter(Boolean);
 
@@ -2828,7 +2809,7 @@ async function flushBuffer(){
 
   const remaining = [];
 
-  for (const line of lines){
+  for (const line of lines) {
 
     const data = JSON.parse(line);
 
@@ -2838,7 +2819,7 @@ async function flushBuffer(){
   }
 
   if (remaining.length)
-    fs.writeFileSync(BUFFER_FILE, remaining.join("\n")+"\n");
+    fs.writeFileSync(BUFFER_FILE, remaining.join("\n") + "\n");
   else
     fs.unlinkSync(BUFFER_FILE);
 }
@@ -2848,7 +2829,7 @@ async function flushBuffer(){
 // 📡 POST WITH RETRY
 // =====================
 
-async function postHeartbeat(payload, allowBuffer = true){
+async function postHeartbeat(payload, allowBuffer = true) {
 
   try {
 
@@ -2866,11 +2847,11 @@ async function postHeartbeat(payload, allowBuffer = true){
     //console.log("✅ HB sent", payload.internetOnline, payload.latencyMs);
     return true;
 
-  } catch (e){
+  } catch (e) {
 
     console.log("❌ HB post fail:", e.message);
 
-    if (allowBuffer){
+    if (allowBuffer) {
       bufferSave(payload);
       console.log("💾 buffered");
     }
@@ -2884,7 +2865,7 @@ async function postHeartbeat(payload, allowBuffer = true){
 // ❤️ HEARTBEAT LOOP
 // =====================
 
-async function heartbeat(){
+async function heartbeat() {
 
   const net = await pingHost();
 
