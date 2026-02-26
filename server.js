@@ -433,7 +433,7 @@ async function verifyLockerClosedUntilLocked(
       if (!status) continue;
 
       if (status.toLowerCase() === "locked") {
-        console.log("Locker confirmed locked");
+        console.log("Locker confirmed locked"); 
 
         await sleep(5000);
 
@@ -683,6 +683,7 @@ app.post("/api/whatsapp/send-parcel-link", async (req, res) => {
 });
 
 app.post("/terminal/dropoff", async (req, res) => {
+  console.log("terminal dropoff hit")
   try {
     let { size, hours, phone, sessionId, helpId } = req.body;
 
@@ -711,23 +712,24 @@ app.post("/terminal/dropoff", async (req, res) => {
     }
 
     // 🔒 VALIDATE RESERVATION
-    const reservationCheck = await Locker.findOne({
-      lockerId: lockerID,
-      compartments: {
-        $elemMatch: {
-          size,
-          status: "reserved",
-          reservedBySession: sessionId,
-          reservationExpiresAt: { $gt: new Date() }
-        }
-      }
-    });
+    // const reservationCheck = await Locker.findOne({
+    //   lockerId: lockerID,
+    //   compartments: {
+    //     $elemMatch: {
+    //       size,
+    //       status: "reserved",
+    //       reservedBySession: sessionId,
+    //       reservationExpiresAt: { $gt: new Date() }
+    //     }
+    //   }
+    // });
 
-    if (!reservationCheck) {
-      return res.status(400).json({
-        error: "Reservation expired or invalid"
-      });
-    }
+
+    // if (!reservationCheck) {
+    //   return res.status(400).json({
+    //     error: "Reservation expired or invalid"
+    //   });
+    // }
 
     const total = PRICES[size] * hrs;
 
@@ -772,6 +774,7 @@ app.post("/terminal/dropoff", async (req, res) => {
 
     parcel.razorpayOrderId = order.id;
     await parcel.save();
+    console.log(order)
 
     return res.json({
       parcelId: parcel._id.toString(),
@@ -797,15 +800,27 @@ app.post("/terminal/payment/verify", async (req, res) => {
       parcelId,
     } = req.body;
 
+    // -------------------------
+    // 1️⃣ Basic Validation
+    // -------------------------
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || !parcelId) {
-      return res.status(400).json({ success: false, error: "Missing parameters" });
+      return res.status(400).json({
+        success: false,
+        error: "Missing parameters",
+      });
     }
 
     const parcel = await Parcel2.findById(parcelId);
     if (!parcel) {
-      return res.status(404).json({ success: false, error: "Parcel not found" });
+      return res.status(404).json({
+        success: false,
+        error: "Parcel not found",
+      });
     }
 
+    // -------------------------
+    // 2️⃣ Idempotency Check
+    // -------------------------
     if (parcel.paymentStatus === "completed") {
       return res.json({
         success: true,
@@ -815,50 +830,39 @@ app.post("/terminal/payment/verify", async (req, res) => {
       });
     }
 
+    // -------------------------
+    // 3️⃣ Order Match Check
+    // -------------------------
     if (parcel.razorpayOrderId !== razorpay_order_id) {
-      return res.status(400).json({ success: false, error: "Order mismatch" });
+      return res.status(400).json({
+        success: false,
+        error: "Order mismatch",
+      });
     }
 
-    const expectedSignature = crypto
+    // -------------------------
+    // 4️⃣ Signature Verification
+    // -------------------------
+    const generatedSignature = crypto
       .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
       .update(`${razorpay_order_id}|${razorpay_payment_id}`)
       .digest("hex");
 
-    if (expectedSignature !== razorpay_signature) {
-      return res.status(400).json({ success: false, error: "Invalid signature" });
-    }
+    const isValidSignature = crypto.timingSafeEqual(
+      Buffer.from(generatedSignature),
+      Buffer.from(razorpay_signature)
+    );
 
-    // 🔒 ATOMIC RESERVED → PAID
-  const locker = await Locker.findOneAndUpdate(
-  {
-    lockerId: parcel.lockerId,
-    compartments: {
-      $elemMatch: {
-        size: parcel.size,
-        reservedBySession: parcel.sessionId,
-        $or: [
-          { status: "reserved" },
-          { status: { $exists: false } }
-        ]
-      }
-    }
-  },
-  {
-    $set: {
-      "compartments.$.status": "paid"
-    }
-  },
-  { new: true }
-);
-
-
-    if (!locker) {
+    if (!isValidSignature) {
       return res.status(400).json({
         success: false,
-        error: "Reservation invalid or expired"
+        error: "Invalid signature",
       });
     }
 
+    // -------------------------
+    // 5️⃣ Mark Payment Completed
+    // -------------------------
     parcel.paymentStatus = "completed";
     parcel.status = "awaiting_pick";
     parcel.razorpayPaymentId = razorpay_payment_id;
@@ -866,20 +870,100 @@ app.post("/terminal/payment/verify", async (req, res) => {
     parcel.paidAt = new Date();
     await parcel.save();
 
+    let lockerError = null;
+
+    try {
+      // -------------------------
+      // 6️⃣ Locker Allocation
+      // -------------------------
+      const locker = await Locker.findOne({ lockerId: "L00002" });
+      if (!locker) throw new Error("Locker not found");
+
+      const compartment = locker.compartments.find(
+        (c) => c.size === parcel.size && !c.isBooked
+      );
+
+      if (!compartment) throw new Error("No free compartment");
+
+      let lockNum = parseInt(compartment.compartmentId);
+      let addr = 0x00;
+
+      if (lockNum > 11) {
+        addr = 0x01;
+        lockNum -= 12;
+      }
+
+      await sendUnlock(lockNum, addr);
+
+      compartment.isBooked = true;
+      compartment.currentParcelId = parcel._id;
+
+      await locker.save();
+
+      parcel.lockerId = locker.lockerId;
+      parcel.compartmentId = compartment.compartmentId;
+      parcel.UsercompartmentId = parseInt(compartment.compartmentId) + 1;
+
+      await parcel.save();
+
+      // Background verification loop (non-blocking)
+      verifyLockerClosedUntilLocked(addr, lockNum, parcel.helpId, 1000)
+        .catch((err) => {
+          console.error("Verify loop crashed:", err);
+        });
+
+    } catch (err) {
+      lockerError = err.message;
+      console.error("⚠️ Locker allocation failed:", err.message);
+    }
+
+    // -------------------------
+    // 7️⃣ Send WhatsApp
+    // -------------------------
+    try {
+      await client.messages.create({
+        to: `whatsapp:+91${parcel.senderPhone}`,
+        from: "whatsapp:+15558076515",
+        contentSid: "HXe73f967b34f11b7e3c9a7bbba9b746f6",
+        contentVariables: JSON.stringify({
+          2: `${parcel.customId}/qr`,
+        }),
+      });
+
+      console.log("✅ WhatsApp sent");
+    } catch (err) {
+      console.error("❌ WhatsApp error:", err.message);
+    }
+
+    // -------------------------
+    // 8️⃣ Send SMS
+    // -------------------------
+    try {
+      const smsText = `Your Drop Point Locker Access Code is ${parcel.accessCode}. Please don't share this with anyone. -DROPPOINT`;
+      await sendSMS(`91${parcel.senderPhone}`, smsText);
+    } catch (err) {
+      console.error("❌ SMS error:", err.message);
+    }
+
+    // -------------------------
+    // 9️⃣ Final Response
+    // -------------------------
     return res.json({
       success: true,
-      accessCode: parcel.accessCode
+      accessCode: parcel.accessCode,
+      lockerId: parcel.lockerId ?? null,
+      compartmentId: parcel.compartmentId ?? null,
+      lockerError,
     });
 
   } catch (err) {
-    console.error("verify error:", err);
+    console.error("❌ verify error:", err);
     return res.status(500).json({
       success: false,
-      error: "Server error"
+      error: "Server error",
     });
   }
 });
-
 
 
 app.post("/terminal/payment/drop-verify", async (req, res) => {
