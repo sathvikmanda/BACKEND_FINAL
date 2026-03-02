@@ -1,7 +1,7 @@
 const { unlockCompartment } = require("../locker/lockerHardware");
 
 module.exports = async function handlePickupFlow(
-  accessCode,deps
+  accessCode, deps
 
 ) {
   try {
@@ -81,88 +81,88 @@ module.exports = async function handlePickupFlow(
 
     // ---------- OVERSTAY BILLING ----------
 
-    
+
     if (parcel.expiresAt < now && parcel.status !== "overstay") {
       parcel.status = "overstay";
       parcel.billing.isChargeable = true;
       await parcel.save();
     }
 
-        if(parcel.paymentStatus === "pending" && parcel.status === "awaiting_pick"){
-          const ratePerHour = RATE_BY_SIZE[parcel.size];
+    if (parcel.paymentStatus === "pending" && parcel.status === "awaiting_pick") {
+      const ratePerHour = RATE_BY_SIZE[parcel.size];
       return {
-  status: 402,
-  body: {
-    success: false,
-    paymentRequired: true,
-    parcelId: `${parcel._id}`,
-    amount : parseInt(`${parcel.cost}`),
-    usageSummary: {
-      size: parcel.size,
-      extraHours : 0,
-      ratePerHour,
-      storedAt: parcel.createdAt.toISOString(),
-      freeUntil: parcel.expiresAt.toISOString(),
-      now: now.toISOString(),
-    },
-  },
-};
+        status: 402,
+        body: {
+          success: false,
+          paymentRequired: true,
+          parcelId: `${parcel._id}`,
+          amount: parseInt(`${parcel.cost}`),
+          usageSummary: {
+            size: parcel.size,
+            extraHours: 0,
+            ratePerHour,
+            storedAt: parcel.createdAt.toISOString(),
+            freeUntil: parcel.expiresAt.toISOString(),
+            now: now.toISOString(),
+          },
+        },
+      };
 
     }
 
     if (parcel.status === "overstay") {
       const nowTime = new Date();
 
-const diffMs = now - parcel.expiresAt;
-const extraHours = Math.max(
-  1,
-  Math.ceil(diffMs / (1000 * 60 * 60))
-);
+      const diffMs = now - parcel.expiresAt;
+      const extraHours = Math.max(
+        1,
+        Math.ceil(diffMs / (1000 * 60 * 60))
+      );
 
-const ratePerHour = RATE_BY_SIZE[parcel.size];
-const amount = extraHours * ratePerHour;
+      const ratePerHour = RATE_BY_SIZE[parcel.size];
+      const amount = extraHours * ratePerHour;
 
-await Parcel2.updateOne(
-  { _id: parcel._id },
-  {
-    $set: {
-      "billing.amountAccrued": amount,
-      "billing.ratePerHour": ratePerHour,
-      cost: amount,
-      paymentStatus: "pending",
-    },
-  }
-);
+      await Parcel2.updateOne(
+        { _id: parcel._id },
+        {
+          $set: {
+            "billing.amountAccrued": amount,
+            "billing.ratePerHour": ratePerHour,
+            cost: amount,
+            paymentStatus: "pending",
+          },
+        }
+      );
 
-const order = await razorpay.orders.create({
-  amount: amount * 100,
-  currency: "INR",
-  receipt: `parcel_${parcel.customId}`,
-});
+      const order = await razorpay.orders.create({
+        amount: amount * 100,
+        currency: "INR",
+        receipt: `parcel_${parcel.customId}`,
+      });
 
-return {
-  status: 402,
-  body: {
-    success: false,
-    paymentRequired: true,
-    parcelId: `${parcel._id}`,
-    amount,
-    usageSummary: {
-      size: parcel.size,
-      extraHours,
-      ratePerHour,
-      storedAt: parcel.createdAt.toISOString(),
-      freeUntil: parcel.expiresAt.toISOString(),
-      now: now.toISOString(),
-    },
-  },
-};
-
-
+      return {
+        status: 402,
+        body: {
+          success: false,
+          paymentRequired: true,
+          parcelId: `${parcel._id}`,
+          amount,
+          usageSummary: {
+            size: parcel.size,
+            extraHours,
+            ratePerHour,
+            storedAt: parcel.createdAt.toISOString(),
+            freeUntil: parcel.expiresAt.toISOString(),
+            now: now.toISOString(),
+          },
+        },
+      };
 
 
-      }
-    
+
+
+    }
+
 
     // ---------- UNLOCK ----------
 
@@ -198,58 +198,79 @@ return {
       }
     );
     // ---------- PARTNER REVENUE FROM LOCKER ----------
-// ---------- PARTNER REVENUE FROM LOCKER ----------
-if (locker.partner && Number(parcel.cost) > 0) {
+    // ---------- PARTNER REVENUE FROM LOCKER ----------
+    if (locker.partner && Number(parcel.cost) > 0) {
 
-  const gross = Number(parcel.cost);
+      const gross = Number(parcel.cost);
 
-  const partner = await LocationPartner.findById(locker.partner);
+      const partner = await LocationPartner.findById(locker.partner);
 
-  if (
-    partner &&
-    partner.isActive &&
-    partner.verificationStatus === "approved" &&
-    partner.revenue &&
-    partner.revenue.modelType
-  ) {
+      if (
+        partner &&
+        partner.isActive &&
+        partner.verificationStatus === "approved" &&
+        partner.revenue &&
+        partner.revenue.modelType
+      ) {
 
-    const calc = calculatePartnerRevenue(gross, partner.revenue);
+        const calc = calculatePartnerRevenue(gross, partner.revenue);
 
-    const partnerShare = Number(calc.partnerShare.toFixed(2));
-    const platformShare = Number(calc.platformShare.toFixed(2));
+        const partnerShare = Number(calc.partnerShare.toFixed(2));
+        const platformShare = Number(calc.platformShare.toFixed(2));
 
-    const ledgerEntry = {
-      parcelId: parcel._id,
-      grossAmount: gross,
-      platformShare,
-      partnerShare,
-      modelTypeUsed: partner.revenue.modelType,
-      calculationSnapshot: partner.revenue.rules || {},
-      calculatedAt: new Date()
-    };
+        const ledgerEntry = {
+          parcelId: parcel._id,
+          grossAmount: gross,
+          platformShare,
+          partnerShare,
+          modelTypeUsed: partner.revenue.modelType,
+          calculationSnapshot: partner.revenue.rules || {},
+          calculatedAt: new Date()
+        };
 
-    // ✅ atomic style update (safer than doc.save math)
-    await LocationPartner.updateOne(
-      { _id: partner._id },
-      {
-        $push: { revenueLedger: ledgerEntry },
-        $inc: {
-          "revenueStats.totalGross": gross,
-          "revenueStats.totalPartnerEarned": partnerShare,
-          "revenueStats.totalPlatformEarned": platformShare,
-          "revenueStats.pendingPayout": partnerShare
-        },
-        $set: {
-          "revenueStats.lastCalculatedAt": new Date()
-        }
+        // ✅ atomic style update (safer than doc.save math)
+        await LocationPartner.updateOne(
+          { _id: partner._id },
+          {
+            $push: { revenueLedger: ledgerEntry },
+            $inc: {
+              "revenueStats.totalGross": gross,
+              "revenueStats.totalPartnerEarned": partnerShare,
+              "revenueStats.totalPlatformEarned": platformShare,
+              "revenueStats.pendingPayout": partnerShare
+            },
+            $set: {
+              "revenueStats.lastCalculatedAt": new Date()
+            }
+          }
+        );
       }
-    );
-  }
-}
+    }
+
+
+    if (parcel.self_storage) {
+      await ChainOfCustody.findOneAndUpdate(
+        { parcelId: parcel._id },
+        {
+          $set: {
+            currentCustodyHolder: {
+              holderType: "user",
+              identity: { phone: parcel.senderPhone }
+            }
+          },
+          $push: {
+            history: {
+              actorType: "user",
+              actorIdentifier: { phone: parcel.senderPhone },
+              eventType: "picked_up_by_sender"
+            }
+          }
+        }
+      );
+    }
 
 
 
-    
 
     return {
       status: 200,

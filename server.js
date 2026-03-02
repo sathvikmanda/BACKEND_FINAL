@@ -9,6 +9,10 @@ const path = require("path")
 const fs = require("fs")
 const mongoose = require("mongoose");
 const Parcel2 = require("./models/parcel");
+
+const ChainOfCustody = require("./models/chainOfCustody");
+const createChainOfCustody = require("./services/createChainOfCustody");
+
 const Locker = require("./models/locker");
 const User = require("./models/user");
 const http = require("http");
@@ -731,6 +735,7 @@ app.post("/terminal/dropoff", async (req, res) => {
       lockerId: lockerID,
       hours: hrs,
       terminal_store: true,
+      self_storage: true,
       accessCode: Math.floor(100000 + Math.random() * 900000).toString(),
       customId,
       cost: total,
@@ -849,6 +854,45 @@ app.post("/terminal/payment/verify", async (req, res) => {
     parcel.razorpaySignature = razorpay_signature;
     parcel.paidAt = new Date();
     await parcel.save();
+    await ChainOfCustody.create({
+      parcelId: parcel._id,
+
+      intent: "self_storage",
+
+      // Owner = user
+      currentOwner: {
+        ownerType: "user",
+        identity: {
+          phone: phone
+        }
+      },
+
+      // Custody = locker
+      currentCustodyHolder: {
+        holderType: "droppoint",
+        identity: {
+          lockerId: lockerID
+        }
+      },
+
+      history: [
+        {
+          actorType: "user",
+          actorIdentifier: phone,
+          eventType: "parcel_created"
+        },
+        {
+          actorType: "user",
+          actorIdentifier: phone,
+          eventType: "dropped_by_sender"
+        },
+        {
+          actorType: "droppoint",
+          actorIdentifier: lockerID,
+          eventType: "custody_transferred_to_locker"
+        }
+      ]
+    });
 
     let lockerError = null;
 
@@ -928,6 +972,46 @@ app.post("/terminal/payment/verify", async (req, res) => {
     // -------------------------
     // 9️⃣ Final Response
     // -------------------------
+    await ChainOfCustody.create({
+      parcelId: parcel._id,
+
+      intent: "self_storage",
+
+      // Owner = user
+      currentOwner: {
+        ownerType: "user",
+        identity: {
+          phone: phone
+        }
+      },
+
+      // Custody = locker
+      currentCustodyHolder: {
+        holderType: "droppoint",
+        identity: {
+          lockerId: lockerID
+        }
+      },
+
+      history: [
+        {
+          actorType: "user",
+          actorIdentifier: phone,
+          eventType: "parcel_created"
+        },
+        {
+          actorType: "user",
+          actorIdentifier: phone,
+          eventType: "dropped_by_sender"
+        },
+        {
+          actorType: "droppoint",
+          actorIdentifier: lockerID,
+          eventType: "custody_transferred_to_locker"
+        }
+      ]
+    });
+
     return res.json({
       success: true,
       accessCode: parcel.accessCode,
@@ -1460,10 +1544,6 @@ app.post("/personal/dropoff", async (req, res) => {
     console.log("📦 new personal dropoff hit");
 
     const { recipientPhone, deliveryPhone, size, hours, helpId } = req.body;
-
-
-
-
     console.log("Incoming helpId:", helpId);
 
     // ================= VALIDATION =================
@@ -1589,6 +1669,48 @@ app.post("/personal/dropoff", async (req, res) => {
       paymentStatus: "pending",
       helpId: helpId,
     });
+
+    await createChainOfCustody({
+      parcelId: parcel._id,
+      intent: "drop_for_someone",
+
+      // Owner = sender
+      ownerType: "user",
+      ownerPhone: deliveryPhone,
+
+      // Custody = locker
+      custodyType: "droppoint",
+      custodyLockerId: locker.lockerId,
+
+      initialActorType: "user",
+      initialActorIdentifier: deliveryPhone
+    });
+
+    await ChainOfCustody.findOneAndUpdate(
+      { parcelId: parcel._id },
+      {
+        $push: {
+          history: {
+            $each: [
+              {
+                actorType: "user",
+                actorIdentifier: deliveryPhone,
+                eventType: "dropped_by_sender"
+              },
+              {
+                actorType: "droppoint",
+                actorIdentifier: locker.lockerId,
+                eventType: "custody_transferred_to_locker"
+              }
+            ]
+          }
+        }
+      }
+    );
+
+
+
+
 
     // ================= BOOK COMPARTMENT =================
 
