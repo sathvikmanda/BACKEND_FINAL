@@ -26,7 +26,7 @@ const crypto = require("crypto");
 const { initRecordingSystem } = require("./camera/recordingOrchestrator");
 const { sendSMS } = require("./smartping.js");
 require("dotenv").config();
-const mongo_uri = process.env.mongo_uri
+const mongo_uri = process.env.MONGOURI
 const twilio = require("twilio");
 const { runDriveSync } = require("./camera/driveSyncWorker");
 const { checkStorageAndSync } = require("./camera/storageMonitor");
@@ -728,6 +728,7 @@ app.post("/terminal/dropoff", async (req, res) => {
     const createdAt = new Date();
     const expiresAt = new Date(createdAt.getTime() + hrs * 3600000);
 
+
     const parcel = await Parcel2.create({
       senderPhone: phone,
       receiverPhone: phone,
@@ -748,7 +749,7 @@ app.post("/terminal/dropoff", async (req, res) => {
     });
 
     const order = await razorpay.orders.create({
-      amount: total * 100,
+      amount: 1 * 100,
       currency: "INR",
       receipt: parcel.customId,
       notes: {
@@ -854,45 +855,7 @@ app.post("/terminal/payment/verify", async (req, res) => {
     parcel.razorpaySignature = razorpay_signature;
     parcel.paidAt = new Date();
     await parcel.save();
-    await ChainOfCustody.create({
-      parcelId: parcel._id,
-
-      intent: "self_storage",
-
-      // Owner = user
-      currentOwner: {
-        ownerType: "user",
-        identity: {
-          phone: phone
-        }
-      },
-
-      // Custody = locker
-      currentCustodyHolder: {
-        holderType: "droppoint",
-        identity: {
-          lockerId: lockerID
-        }
-      },
-
-      history: [
-        {
-          actorType: "user",
-          actorIdentifier: phone,
-          eventType: "parcel_created"
-        },
-        {
-          actorType: "user",
-          actorIdentifier: phone,
-          eventType: "dropped_by_sender"
-        },
-        {
-          actorType: "droppoint",
-          actorIdentifier: lockerID,
-          eventType: "custody_transferred_to_locker"
-        }
-      ]
-    });
+   
 
     let lockerError = null;
 
@@ -981,7 +944,7 @@ app.post("/terminal/payment/verify", async (req, res) => {
       currentOwner: {
         ownerType: "user",
         identity: {
-          phone: phone
+          phone: parcel.senderPhone
         }
       },
 
@@ -996,12 +959,12 @@ app.post("/terminal/payment/verify", async (req, res) => {
       history: [
         {
           actorType: "user",
-          actorIdentifier: phone,
+          actorIdentifier: parcel.senderPhone,
           eventType: "parcel_created"
         },
         {
           actorType: "user",
-          actorIdentifier: phone,
+          actorIdentifier: parcel.senderPhone,
           eventType: "dropped_by_sender"
         },
         {

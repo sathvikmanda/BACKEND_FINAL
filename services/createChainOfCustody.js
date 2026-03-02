@@ -1,6 +1,6 @@
 
 const ChainOfCustody = require("../models/chainOfCustody");
-const Parcel2 = require("../models/Parcel2");
+const Parcel2 = require("../models/parcel");
 
 async function createChainOfCustody({
     parcelId,

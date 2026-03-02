@@ -21,7 +21,12 @@ const ParcelSchema = new mongoose.Schema({
   lockerLng: { type: String },
 
   accessCode: { type: String, unique: true, required: true, index: true },
-  modifyCode: { type: String, unique: true, index: true },
+  modifyCode: {
+  type: String,
+  unique: true,
+  sparse: true,
+  
+},
   qrImage: String,
   unlockUrl: String,
 

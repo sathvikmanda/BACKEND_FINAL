@@ -1,5 +1,5 @@
 const { unlockCompartment } = require("../locker/lockerHardware");
-
+const ChainOfCustody = require("../../models/chainOfCustody");
 module.exports = async function handlePickupFlow(
   accessCode, deps
 
@@ -255,13 +255,13 @@ module.exports = async function handlePickupFlow(
           $set: {
             currentCustodyHolder: {
               holderType: "user",
-              identity: { phone: parcel.senderPhone }
+              identity: parcel.senderPhone 
             }
           },
           $push: {
             history: {
               actorType: "user",
-              actorIdentifier: { phone: parcel.senderPhone },
+              actorIdentifier: parcel.senderPhone,
               eventType: "picked_up_by_sender"
             }
           }
