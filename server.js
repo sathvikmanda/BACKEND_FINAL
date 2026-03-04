@@ -26,7 +26,7 @@ const crypto = require("crypto");
 const { initRecordingSystem } = require("./camera/recordingOrchestrator");
 const { sendSMS } = require("./smartping.js");
 require("dotenv").config();
-const mongo_uri = process.env.MONGOURI
+const mongo_uri = process.env.mongo_uri
 const twilio = require("twilio");
 const { runDriveSync } = require("./camera/driveSyncWorker");
 const { checkStorageAndSync } = require("./camera/storageMonitor");
@@ -359,10 +359,11 @@ app.post("/api/complaint/resolve", async (req, res) => {
   try {
     const { helpId } = req.body;
 
-    for (const cam of CAMERAS) {
-      await deactivateRecording(helpId, cam.cameraId);
-    }
+    // ✅ Use stopAllRecordingsForSession — it stops FFmpeg correctly
+    // AND sets endedAt on each session before we generate clips
+    await stopAllRecordingsForSession(helpId);
 
+    // Wait for FFmpeg to flush file to disk
     await new Promise(r => setTimeout(r, 2000));
 
     const clips = await generateClipsForSession(helpId, BASE_DIR);
