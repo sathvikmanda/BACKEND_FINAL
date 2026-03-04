@@ -17,6 +17,7 @@ const CustodyEventSchema = new mongoose.Schema({
         enum: [
             "parcel_created",
             "dropped_by_sender",
+            "dropped_by_delivery_agent",
             "custody_transferred_to_locker",
             "picked_up_by_delivery_agent",
             "custody_transferred_to_delivery_agent",
@@ -25,7 +26,9 @@ const CustodyEventSchema = new mongoose.Schema({
             "returned_to_sender",
             "manual_override",
             "dispute_flagged",
-            "picked_up_by_sender"
+            "picked_up_by_sender",
+            "picked_up_by_user",
+            "picked_up_by_receiver"
         ],
         required: true
     },
@@ -52,7 +55,9 @@ const ChainOfCustodySchema = new mongoose.Schema({
         enum: [
             "self_storage",
             "courier_shipment",
-            "drop_for_someone"
+            "drop_for_someone",
+            "delivery_drop",
+            "personal_drop"
         ],
         required: true
     },

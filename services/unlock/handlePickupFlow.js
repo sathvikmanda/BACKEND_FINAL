@@ -1,5 +1,8 @@
 const { unlockCompartment } = require("../locker/lockerHardware");
 const ChainOfCustody = require("../../models/chainOfCustody");
+
+const Partner = require("../../models/partnerSchema");
+
 module.exports = async function handlePickupFlow(
   accessCode, deps
 
@@ -113,7 +116,7 @@ module.exports = async function handlePickupFlow(
     if (parcel.status === "overstay") {
       const nowTime = new Date();
 
-      const diffMs = now - parcel.expiresAt;
+      const diffMs = nowTime - parcel.expiresAt;
       const extraHours = Math.max(
         1,
         Math.ceil(diffMs / (1000 * 60 * 60))
@@ -145,6 +148,7 @@ module.exports = async function handlePickupFlow(
         body: {
           success: false,
           paymentRequired: true,
+          orderId: order.id,
           parcelId: `${parcel._id}`,
           amount,
           usageSummary: {
@@ -192,7 +196,7 @@ module.exports = async function handlePickupFlow(
       {
         $set: {
           status: "picked",
-          pickedUpAt: new Date(),
+          pickedAt: new Date(),
           "billing.isChargeable": false
         }
       }
@@ -247,6 +251,25 @@ module.exports = async function handlePickupFlow(
       }
     }
 
+    if (parcel.partner) {
+      const partner = await Partner.findById(parcel.partner);
+      if (partner) {
+        if (!parcel.droppedAt) {
+          return;
+        }
+        const time = Math.max(0, Date.now() - new Date(parcel.droppedAt));
+        const hours = time / 1000 / 60 / 60;
+        const rate = partner.hourlyRate;
+        const amount = hours * rate;
+        await partner.updateOne({
+          $inc: {
+            "billing.totalBilled": amount,
+            "billing.outstandingAmount": amount
+          }
+        });
+
+      }
+    }
 
     if (parcel.self_storage) {
       await ChainOfCustody.findOneAndUpdate(
@@ -255,7 +278,7 @@ module.exports = async function handlePickupFlow(
           $set: {
             currentCustodyHolder: {
               holderType: "user",
-              identity: parcel.senderPhone 
+              identity: { phone: parcel.senderPhone }
             }
           },
           $push: {
@@ -269,9 +292,47 @@ module.exports = async function handlePickupFlow(
       );
     }
 
+    if (parcel.delivery_drop) {
+      await ChainOfCustody.findOneAndUpdate(
+        { parcelId: parcel._id },
+        {
+          $set: {
+            currentCustodyHolder: {
+              holderType: "user",
+              identity: { phone: parcel.receiverPhone }
+            }
+          },
+          $push: {
+            history: {
+              actorType: "user",
+              actorIdentifier: parcel.receiverPhone,
+              eventType: "picked_up_by_user"
+            }
+          }
+        }
+      );
+    }
 
-
-
+    if (parcel.personal_drop) {
+      await ChainOfCustody.findOneAndUpdate(
+        { parcelId: parcel._id },
+        {
+          $set: {
+            currentCustodyHolder: {
+              holderType: "user",
+              identity: { phone: parcel.receiverPhone }
+            }
+          },
+          $push: {
+            history: {
+              actorType: "user",
+              actorIdentifier: parcel.receiverPhone,
+              eventType: "picked_up_by_receiver"
+            }
+          }
+        }
+      );
+    }
     return {
       status: 200,
       body: {

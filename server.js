@@ -958,11 +958,7 @@ app.post("/terminal/payment/verify", async (req, res) => {
       },
 
       history: [
-        {
-          actorType: "user",
-          actorIdentifier: parcel.senderPhone,
-          eventType: "parcel_created"
-        },
+       
         {
           actorType: "user",
           actorIdentifier: parcel.senderPhone,
@@ -1113,7 +1109,36 @@ app.post("/terminal/payment/drop-verify", async (req, res) => {
 
     const smsText1 = `Your Drop Point Locker Access Code is ${parcel.accessCode}. Please don't share this with anyone. -DROPPOINT`;
     sendSMS(`91${parcel.senderPhone}`, smsText1);
+    await ChainOfCustody.create({
+      parcelId : parcel._id,
+      intent : "personal_drop",
 
+      currentOwner:{
+        ownerType : "user",
+        identity:{
+          phone : parcel.receiverPhone
+        }
+      },
+
+      currentCustodyHolder : {
+        holderType : "droppoint",
+        identity : {
+          lockerId : lockerID
+        }
+      },
+
+      history : [
+        {
+          actorType : "user",
+          actorIdentifier : parcel.senderPhone,
+          eventType : "dropped_by_sender"
+        },{
+          actorType : "droppoint",
+          actorIdentifier : lockerID,
+          eventType : "custody_transferred_to_locker"
+        }
+      ]
+    })
     return res.json({
       success: true,
       accessCode: parcel.accessCode,
@@ -1196,6 +1221,7 @@ app.post("/terminal/authdropoff", async (req, res) => {
 
     parcel.razorpayOrderId = order.id;
     await parcel.save();
+
 
     // ✅ RETURN JSON FOR FLUTTER
     return res.json({
@@ -1407,6 +1433,42 @@ app.post("/delivery/dropoff", async (req, res) => {
       delayMs: 1000
     }).catch(err => {
       console.error("Locker verify failed:", err);
+    });
+
+    await ChainOfCustody.create({
+      parcelId: parcel._id,
+
+      intent: "delivery_drop",
+
+      // Legal owner is the recipient
+      currentOwner: {
+        ownerType: "recipient",
+        identity: {
+          phone: recipientPhone
+        }
+      },
+
+      // Locker currently holds the parcel
+      currentCustodyHolder: {
+        holderType: "locker",
+        identity: {
+          lockerId: locker.lockerId
+        }
+      },
+
+      history: [
+
+        {
+          actorType: "delivery_agent",
+          actorIdentifier: deliveryPhone,
+          eventType: "dropped_by_delivery_agent"
+        },
+        {
+          actorType: "droppoint",
+          actorIdentifier: locker.lockerId,
+          eventType: "custody_transferred_to_locker"
+        }
+      ]
     });
     // ================= RESPONSE =================
 

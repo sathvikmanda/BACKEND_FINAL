@@ -22,18 +22,17 @@ const ParcelSchema = new mongoose.Schema({
 
   accessCode: { type: String, unique: true, required: true, index: true },
   modifyCode: {
-  type: String,
-  unique: true,
-  sparse: true,
-  
-},
+    type: String,
+    unique: true,
+    sparse: true,
+
+  },
   qrImage: String,
   unlockUrl: String,
 
   razorpayOrderId: String,
   cost: { type: mongoose.Decimal128, default: 0, required: true },
   paymentOption: { type: String, enum: ["sender_pays", "receiver_pays"] },
-  paymentStatus: { type: String, enum: ["pending", "completed"], default: "pending" },
 
   customId: {
     type: String,
@@ -55,7 +54,9 @@ const ParcelSchema = new mongoose.Schema({
   },
   razorpayPaymentLink: { type: String },
   paymentStatus: { type: String, default: "pending" },
-
+  razorpayPaymentId: {
+    type: String
+  },
 
   status: {
     type: String,
@@ -180,6 +181,23 @@ const ParcelSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+
+  delivery_drop: {
+    type: Boolean,
+    default: false
+  },
+
+  personal_drop: {
+    type: Boolean,
+    default: false
+  },
+
+
+
+  send: {
+    type: Boolean,
+    default: false
+  }
 
 
 
