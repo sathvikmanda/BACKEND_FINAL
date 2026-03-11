@@ -690,15 +690,13 @@ app.post("/api/whatsapp/send-parcel-link", async (req, res) => {
 app.post("/terminal/dropoff", async (req, res) => {
   console.log("terminal dropoff hit")
   try {
-    let { size, hours, phone, sessionId, helpId } = req.body;
+    let { size, hours, phone, helpId } = req.body;
 
     if (!helpId) {
       return res.status(400).json({ error: "Missing helpId" });
     }
 
-    if (!sessionId) {
-      return res.status(400).json({ error: "Missing sessionId" });
-    }
+   
 
     size = size.toLowerCase();
     const PRICES = { small: 5, medium: 10, large: 20 };
@@ -746,7 +744,6 @@ app.post("/terminal/dropoff", async (req, res) => {
       status: "awaiting_payment",
       paymentStatus: "pending",
       helpId,
-      sessionId
     });
 
     const order = await razorpay.orders.create({
