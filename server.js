@@ -2865,8 +2865,6 @@ const { exec } = require("child_process");
 // =====================
 // ⚙️ CONFIG
 // =====================
-const { exec } = require("child_process");
-const axios = require("axios");
 
 const LOCKER_CODE = "L00002";
 const ADMIN_URL = "https://admin.droppoint.in/api/locker-heartbeat";
@@ -2948,8 +2946,7 @@ async function postHeartbeat(payload) {
       }
     );
 
-    console.log("✅ HB sent", payload.internetOnline, payload.latencyMs);
-
+    
   } catch (e) {
 
     console.log("❌ HB post fail:", e.message);
