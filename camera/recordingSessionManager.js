@@ -94,18 +94,18 @@ async function stopRecording({ helpId, cameraId }) {
   const key = helpId + "_" + cameraId;
   const entry = activeSessions.get(key);
   if (!entry) return;
-
+ 
   const ffmpeg = entry.process;
   console.log("Stopping:", key);
-
+ 
   return new Promise(resolve => {
     const timeout = setTimeout(() => {
       console.warn(`FFmpeg SIGKILL fallback for ${key}`);
       ffmpeg.kill("SIGKILL");
       activeSessions.delete(key);
       resolve();
-    }, 8000); // hard kill after 8s
-
+    }, 8000);
+ 
     ffmpeg.on("close", code => {
       clearTimeout(timeout);
       console.log(`FFmpeg exited for ${key} with code ${code}`);
@@ -113,11 +113,12 @@ async function stopRecording({ helpId, cameraId }) {
       console.log("Recording finalized:", key);
       resolve();
     });
-
-    // SIGINT is the correct graceful stop for ffmpeg on Android
+ 
+    // SIGINT is the correct graceful stop for ffmpeg on Android/Termux
     ffmpeg.kill("SIGINT");
   });
 }
+
 
 
 async function stopAllRecordingsForSession(helpId) {

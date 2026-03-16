@@ -29,7 +29,7 @@ require("dotenv").config();
 const mongo_uri = process.env.mongo_uri
 const twilio = require("twilio");
 const { runDriveSync } = require("./camera/driveSyncWorker");
-const { checkStorageAndSync } = require("./camera/storageMonitor");
+const { checkStorageAndSync, cleanOrphanedFolders } = require("./camera/storageMonitor");
 const { appendTimeline } = require("./camera/timelineWriter");
 const { generateClipsForSession } = require("./camera/multiClipProcessor");
 const BASE_DIR = path.join(__dirname, "recordings");
@@ -279,8 +279,6 @@ async function bootstrap() {
     // ===============================
     // 2️⃣ Validate Camera Config
     // ===============================
-
-
     for (const cam of CAMERAS) {
       if (!cam.rtsp) {
         throw new Error(`Missing RTSP URL for ${cam.id} in .env`);
@@ -313,7 +311,19 @@ async function bootstrap() {
     console.log("System ready.");
 
     // ===============================
-    // 5️⃣ Drive Sync (Every 10 min)
+    // 5️⃣ Startup Sync — upload anything left over from before restart
+    // ===============================
+    setImmediate(async () => {
+      try {
+        console.log("🚀 Boot-time Drive Sync...");
+        await runDriveSync(BASE_DIR, "L00002");
+      } catch (err) {
+        console.error("Boot sync error:", err.message);
+      }
+    });
+
+    // ===============================
+    // 6️⃣ Drive Sync (Every 10 min)
     // ===============================
     setInterval(async () => {
       try {
@@ -325,17 +335,17 @@ async function bootstrap() {
     }, 10 * 60 * 1000);
 
     // ===============================
-    // 6️⃣ Storage Monitor (Every 5 min)
+    // 7️⃣ Storage Monitor + Orphan Cleanup (Every 5 min)
     // ===============================
     setInterval(async () => {
       try {
         console.log("Checking storage...");
 
         const stats = await checkStorageAndSync();
+        console.log(`Disk Usage: ${stats.percentUsed.toFixed(2)}%`);
 
-        console.log(
-          `Disk Usage: ${stats.percentUsed.toFixed(2)}%`
-        );
+        // Clean up orphaned/already-uploaded folders older than 24h
+        await cleanOrphanedFolders(BASE_DIR, 24);
 
         if (stats.percentUsed > 85) {
           console.log("Storage high — forcing Drive sync...");
@@ -359,8 +369,6 @@ app.post("/api/complaint/resolve", async (req, res) => {
   try {
     const { helpId } = req.body;
 
-    // ✅ Use stopAllRecordingsForSession — it stops FFmpeg correctly
-    // AND sets endedAt on each session before we generate clips
     await stopAllRecordingsForSession(helpId);
 
     // Wait for FFmpeg to flush file to disk
@@ -370,7 +378,17 @@ app.post("/api/complaint/resolve", async (req, res) => {
 
     appendTimeline(BASE_DIR, helpId, "COMPLAINT RESOLVED");
 
+    // ✅ Respond immediately — don't make Flutter wait for upload
     res.json({ success: true, clips });
+
+    // ✅ Upload in background after response sent
+    setImmediate(async () => {
+      try {
+        await runDriveSync(BASE_DIR, "L00002");
+      } catch (err) {
+        console.error("Drive sync failed after resolve:", err.message);
+      }
+    });
 
   } catch (err) {
     console.error(err);
