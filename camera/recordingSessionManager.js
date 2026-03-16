@@ -96,19 +96,26 @@ async function stopRecording({ helpId, cameraId }) {
   if (!entry) return;
 
   const ffmpeg = entry.process;
-
   console.log("Stopping:", key);
 
   return new Promise(resolve => {
+    const timeout = setTimeout(() => {
+      console.warn(`FFmpeg SIGKILL fallback for ${key}`);
+      ffmpeg.kill("SIGKILL");
+      activeSessions.delete(key);
+      resolve();
+    }, 8000); // hard kill after 8s
+
     ffmpeg.on("close", code => {
+      clearTimeout(timeout);
       console.log(`FFmpeg exited for ${key} with code ${code}`);
       activeSessions.delete(key);
       console.log("Recording finalized:", key);
       resolve();
     });
 
-    ffmpeg.stdin.write("q");   // graceful stop
-    ffmpeg.stdin.end();
+    // SIGINT is the correct graceful stop for ffmpeg on Android
+    ffmpeg.kill("SIGINT");
   });
 }
 
