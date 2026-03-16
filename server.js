@@ -2865,6 +2865,8 @@ const { exec } = require("child_process");
 // =====================
 // ⚙️ CONFIG
 // =====================
+const { exec } = require("child_process");
+const axios = require("axios");
 
 const LOCKER_CODE = "L00002";
 const ADMIN_URL = "https://admin.droppoint.in/api/locker-heartbeat";
@@ -2872,8 +2874,6 @@ const LOCKER_KEY = "supersecretkey";
 
 const HEARTBEAT_INTERVAL = 5000;
 const POST_TIMEOUT = 10000;
-
-const BUFFER_FILE = "./hb-buffer.jsonl";
 
 
 // =====================
@@ -2930,51 +2930,10 @@ function strength(lat) {
 
 
 // =====================
-// 💾 OFFLINE BUFFER
+// 📡 POST HEARTBEAT
 // =====================
 
-function bufferSave(obj) {
-  fs.appendFileSync(
-    BUFFER_FILE,
-    JSON.stringify(obj) + "\n"
-  );
-}
-
-async function flushBuffer() {
-
-  if (!fs.existsSync(BUFFER_FILE)) return;
-
-  const lines = fs.readFileSync(BUFFER_FILE, "utf8")
-    .split("\n")
-    .filter(Boolean);
-
-  if (!lines.length) return;
-
-  console.log("📤 Flushing buffer:", lines.length);
-
-  const remaining = [];
-
-  for (const line of lines) {
-
-    const data = JSON.parse(line);
-
-    const ok = await postHeartbeat(data, false);
-
-    if (!ok) remaining.push(line);
-  }
-
-  if (remaining.length)
-    fs.writeFileSync(BUFFER_FILE, remaining.join("\n") + "\n");
-  else
-    fs.unlinkSync(BUFFER_FILE);
-}
-
-
-// =====================
-// 📡 POST WITH RETRY
-// =====================
-
-async function postHeartbeat(payload, allowBuffer = true) {
+async function postHeartbeat(payload) {
 
   try {
 
@@ -2989,19 +2948,12 @@ async function postHeartbeat(payload, allowBuffer = true) {
       }
     );
 
-    //console.log("✅ HB sent", payload.internetOnline, payload.latencyMs);
-    return true;
+    console.log("✅ HB sent", payload.internetOnline, payload.latencyMs);
 
   } catch (e) {
 
     console.log("❌ HB post fail:", e.message);
 
-    if (allowBuffer) {
-      bufferSave(payload);
-      console.log("💾 buffered");
-    }
-
-    return false;
   }
 }
 
@@ -3023,14 +2975,18 @@ async function heartbeat() {
     agentVersion: "2.0.0"
   };
 
-  const ok = await postHeartbeat(payload);
-
-  if (ok) {
-    await flushBuffer();
-  }
+  await postHeartbeat(payload);
 
 }
 
+
+// =====================
+// 🔁 START LOOP
+// =====================
+
+setInterval(heartbeat, HEARTBEAT_INTERVAL);
+
+heartbeat();
 
 // =====================
 // 🚀 START
