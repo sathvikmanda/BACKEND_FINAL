@@ -2,9 +2,9 @@ function getBoardAddress(compartmentId) {
   let addr = 0x00;
   let lockNum = parseInt(compartmentId);
 
-  if (lockNum > 11) {
+  if (lockNum > 10) {
     addr = 0x01;
-    lockNum -= 12;
+    lockNum -= 11;
   }
 
   return { addr, lockNum };

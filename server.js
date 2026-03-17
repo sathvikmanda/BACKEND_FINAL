@@ -20,7 +20,7 @@ const { Server } = require("socket.io");
 const https = require("https");
 const server = http.createServer(app);
 const io = new Server(server);
-const lockerID = "L00002";
+const lockerID = "L01";
 const Razorpay = require("razorpay");
 const crypto = require("crypto");
 const { initRecordingSystem } = require("./camera/recordingOrchestrator");
@@ -248,7 +248,7 @@ app.post("/api/complaint", async (req, res) => {
     await activateRecording(
       BASE_DIR,
       helpId,
-      "L00002"
+      "L01"
     );
 
     appendTimeline(BASE_DIR, helpId, "COMPLAINT CREATED");
@@ -316,7 +316,7 @@ async function bootstrap() {
     setImmediate(async () => {
       try {
         console.log("🚀 Boot-time Drive Sync...");
-        await runDriveSync(BASE_DIR, "L00002");
+        await runDriveSync(BASE_DIR, "L01");
       } catch (err) {
         console.error("Boot sync error:", err.message);
       }
@@ -328,7 +328,7 @@ async function bootstrap() {
     setInterval(async () => {
       try {
         console.log("Running Drive Sync...");
-        await runDriveSync(BASE_DIR, "L00002");
+        await runDriveSync(BASE_DIR, "L01");
       } catch (err) {
         console.error("Drive sync error:", err.message);
       }
@@ -349,7 +349,7 @@ async function bootstrap() {
 
         if (stats.percentUsed > 85) {
           console.log("Storage high — forcing Drive sync...");
-          await runDriveSync(BASE_DIR, "L00002");
+          await runDriveSync(BASE_DIR, "L01");
         }
 
       } catch (err) {
@@ -384,7 +384,7 @@ app.post("/api/complaint/resolve", async (req, res) => {
     // ✅ Upload in background after response sent
     setImmediate(async () => {
       try {
-        await runDriveSync(BASE_DIR, "L00002");
+        await runDriveSync(BASE_DIR, "L01");
       } catch (err) {
         console.error("Drive sync failed after resolve:", err.message);
       }
@@ -879,7 +879,7 @@ app.post("/terminal/payment/verify", async (req, res) => {
       // -------------------------
       // 6️⃣ Locker Allocation
       // -------------------------
-      const locker = await Locker.findOne({ lockerId: "L00002" });
+      const locker = await Locker.findOne({ lockerId: "L01" });
       if (!locker) throw new Error("Locker not found");
 
       const compartment = locker.compartments.find(
@@ -891,9 +891,9 @@ app.post("/terminal/payment/verify", async (req, res) => {
       let lockNum = parseInt(compartment.compartmentId);
       let addr = 0x00;
 
-      if (lockNum > 11) {
+      if (lockNum > 10) {
         addr = 0x01;
-        lockNum -= 12;
+        lockNum -= 11;
       }
 
       await sendUnlock(lockNum, addr);
@@ -1059,7 +1059,7 @@ app.post("/terminal/payment/drop-verify", async (req, res) => {
     parcel.razorpayPaymentId = razorpay_payment_id;
     parcel.razorpaySignature = razorpay_signature;
 
-    const locker = await Locker.findOne({ lockerId: "L00002" });
+    const locker = await Locker.findOne({ lockerId: "L01" });
     if (!locker) {
       return res
         .status(409)
@@ -1078,9 +1078,9 @@ app.post("/terminal/payment/drop-verify", async (req, res) => {
 
     let addr = 0x00;
     let lockNum = parseInt(compartment.compartmentId);
-    if (lockNum > 11) {
+    if (lockNum > 10) {
       addr = 0x01;
-      lockNum -= 12;
+      lockNum -= 11;
     }
 
     const sent = await sendUnlock(lockNum, addr);
@@ -1365,7 +1365,7 @@ app.post("/delivery/dropoff", async (req, res) => {
 
     // ================= LOCKER ASSIGNMENT =================
 
-    const locker = await Locker.findOne({ lockerId: "L00002" });
+    const locker = await Locker.findOne({ lockerId: "L01" });
     if (!locker) {
       return res.status(500).json({ error: "Locker not found" });
     }
@@ -1544,9 +1544,9 @@ app.post("/api/overstay/payment/verify", async (req, res) => {
     );
     let addr = 0x00;
     let lockNum = parseInt(compartment.compartmentId);
-    if (lockNum > 11) {
+    if (lockNum > 10) {
       addr = 0x01;
-      lockNum -= 12;
+      lockNum -= 11;
     }
 
     const sent = await sendUnlock(lockNum, addr);
@@ -1616,7 +1616,7 @@ app.post("/personal/dropoff", async (req, res) => {
 
     // ================= LOCKER =================
 
-    const locker = await Locker.findOne({ lockerId: "L00002" });
+    const locker = await Locker.findOne({ lockerId: "L01" });
     console.log("Locker fetched:", locker ? "YES" : "NO");
 
     if (!locker) {
@@ -2744,7 +2744,7 @@ app.post("/api/parcel/shiprocket/:id", async (req, res) => {
       },
     });
     try {
-      const locker = await Locker.findOne({ lockerId: "L00002" });
+      const locker = await Locker.findOne({ lockerId: "L01" });
       if (!locker) throw new Error("Locker not found");
 
       const compartment = locker.compartments.find(
@@ -2753,9 +2753,9 @@ app.post("/api/parcel/shiprocket/:id", async (req, res) => {
       if (!compartment) throw new Error("No free compartment");
       let addr = 0x00;
       let lockNum = parseInt(compartment.compartmentId);
-      if (lockNum > 11) {
+      if (lockNum > 10) {
         addr = 0x01;
-        lockNum -= 12;
+        lockNum -= 11;
       }
       const sent = await sendUnlock(lockNum, addr);
 
@@ -2884,7 +2884,7 @@ const { exec } = require("child_process");
 // ⚙️ CONFIG
 // =====================
 
-const LOCKER_CODE = "L00002";
+const LOCKER_CODE = "L01";
 const ADMIN_URL = "https://admin.droppoint.in/api/locker-heartbeat";
 const LOCKER_KEY = "supersecretkey";
 
