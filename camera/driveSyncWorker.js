@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const RecordingSession = require("../models/RecordingSession");
-const { uploadComplaintFolder,uploadSingleFileToDrive } = require("./googleDriveUploader");
+const { uploadComplaintFolder, uploadSingleFileToDrive } = require("./googleDriveUploader");
 const { compressVideo } = require("./videoCompressor");
 const { appendCompressionStats, appendTimeline } = require("./timelineWriter");
 
@@ -14,54 +14,37 @@ async function runDriveSync(baseDir, lockerId) {
   });
 
   for (const session of sessions) {
-
     const helpId = session.sessionId;
     const recordingsBase = path.join(baseDir, "recordings");
     const localDir = path.join(recordingsBase, helpId);
 
+    // Folder already cleaned up — mark as uploaded and move on silently
     if (!fs.existsSync(localDir)) {
-      console.warn("Folder missing:", helpId);
+      await RecordingSession.updateMany(
+        { sessionId: helpId },
+        { cloudUploaded: true, uploadedAt: new Date() }
+      );
       continue;
     }
 
     try {
-
       const files = fs.readdirSync(localDir)
         .filter(f => f.endsWith(".mp4"));
 
       for (const file of files) {
-
         if (file.includes("_compressed")) continue;
-
         const fullPath = path.join(localDir, file);
-
         const compressedPath = await compressVideo(fullPath);
-
-        appendCompressionStats(
-          recordingsBase,
-          helpId,
-          fullPath,
-          compressedPath
-        );
-
+        appendCompressionStats(recordingsBase, helpId, fullPath, compressedPath);
         fs.unlinkSync(fullPath);
       }
 
-      // 🔥 ADD BEFORE UPLOAD
       appendTimeline(recordingsBase, helpId, "CLOUD UPLOAD STARTED");
-
       await uploadComplaintFolder(baseDir, lockerId, helpId);
-
-      // 🔥 ADD AFTER UPLOAD
       appendTimeline(recordingsBase, helpId, "CLOUD UPLOAD SUCCESSFUL");
 
-      // 🔁 Re-upload updated timeline only
       const timelinePath = path.join(localDir, "timeline.txt");
-      await uploadSingleFileToDrive(
-        timelinePath,
-        lockerId,
-        helpId
-      );
+      await uploadSingleFileToDrive(timelinePath, lockerId, helpId);
 
       await RecordingSession.updateMany(
         { sessionId: helpId },
@@ -69,7 +52,6 @@ async function runDriveSync(baseDir, lockerId) {
       );
 
       fs.rmSync(localDir, { recursive: true, force: true });
-
       console.log("☁ Uploaded & cleaned:", helpId);
 
     } catch (err) {
@@ -77,6 +59,5 @@ async function runDriveSync(baseDir, lockerId) {
     }
   }
 }
-
 
 module.exports = { runDriveSync };

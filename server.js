@@ -2517,7 +2517,7 @@ app.post('/api/razorpay/order', express.json(), async (req, res) => {
     }
 
     const order = await razorpay.orders.create({
-      amount: parcel.cost * 100, // PAISA
+      amount: parcel.cost, // PAISA
       currency: 'INR',
       receipt: `parcel_${parcel._id}`,
     });
