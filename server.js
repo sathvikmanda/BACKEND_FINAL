@@ -2967,7 +2967,6 @@ async function postHeartbeat(payload) {
     
   } catch (e) {
 
-    console.log("❌ HB post fail:", e.message);
 
   }
 }
