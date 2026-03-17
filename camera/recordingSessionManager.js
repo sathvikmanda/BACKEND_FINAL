@@ -12,11 +12,7 @@ async function spawnRecording(rtspUrl, baseDir, helpId, lockerId, cameraId) {
   const sessionDir = path.join(baseDir, "recordings", helpId);
   fs.mkdirSync(sessionDir, { recursive: true });
 
-  const outputFile = path.join(
-    sessionDir,
-    `${cameraId}_${Date.now()}.mp4`
-  );
-
+  const outputFile = path.join(sessionDir, `${cameraId}_${Date.now()}.mp4`);
   const key = helpId + "_" + cameraId;
   console.log("Starting recording:", key);
 
@@ -42,11 +38,8 @@ async function spawnRecording(rtspUrl, baseDir, helpId, lockerId, cameraId) {
 
   ffmpeg.on("close", code => {
     console.log(`FFmpeg exited for ${key} with code ${code}`);
-    // 255 = SIGINT (normal graceful stop) — don't log as warning
     if (code !== 0 && code !== 255) {
-      appendTimeline(
-        baseDir,
-        helpId,
+      appendTimeline(baseDir, helpId,
         `WARNING: Camera ${cameraId} stopped unexpectedly (exit code ${code})`
       );
     }
@@ -54,17 +47,12 @@ async function spawnRecording(rtspUrl, baseDir, helpId, lockerId, cameraId) {
 
   ffmpeg.on("error", (err) => {
     console.error(`FFmpeg spawn error for ${key}:`, err.message);
-    appendTimeline(
-      baseDir,
-      helpId,
+    appendTimeline(baseDir, helpId,
       `ERROR: Camera ${cameraId} failed to start — ${err.message}`
     );
   });
 
-  activeSessions.set(key, {
-    process: ffmpeg,
-    outputFile
-  });
+  activeSessions.set(key, { process: ffmpeg, outputFile });
 
   await RecordingSession.create({
     sessionId: helpId,
@@ -91,7 +79,6 @@ async function startRecording(baseDir, helpId, lockerId) {
       appendTimeline(baseDir, helpId, `ERROR: No RTSP URL for ${cam.id} — skipped`);
       continue;
     }
-
     try {
       await spawnRecording(cam.rtsp, baseDir, helpId, lockerId, cam.id);
       appendTimeline(baseDir, helpId, `RECORDING STARTED: ${cam.id}`);
@@ -111,12 +98,14 @@ async function stopRecording({ helpId, cameraId }) {
   console.log("Stopping:", key);
 
   return new Promise(resolve => {
+    // ✅ 20 seconds — give ffmpeg enough time to flush and finalize
+    // NO SIGKILL — it corrupts fragmented MP4 files
     const timeout = setTimeout(() => {
-      console.warn(`FFmpeg SIGKILL fallback for ${key}`);
-      ffmpeg.kill("SIGKILL");
+      console.warn(`FFmpeg stop timeout for ${key} — sending SIGTERM (no SIGKILL)`);
+      ffmpeg.kill("SIGTERM");
       activeSessions.delete(key);
       resolve();
-    }, 8000);
+    }, 20000);
 
     ffmpeg.on("close", code => {
       clearTimeout(timeout);
@@ -126,6 +115,7 @@ async function stopRecording({ helpId, cameraId }) {
       resolve();
     });
 
+    // SIGINT = graceful stop on Android — ffmpeg flushes and writes final fragment
     ffmpeg.kill("SIGINT");
   });
 }
@@ -137,10 +127,7 @@ async function stopAllRecordingsForSession(helpId) {
   });
 
   for (const session of sessions) {
-    await stopRecording({
-      helpId,
-      cameraId: session.cameraId
-    });
+    await stopRecording({ helpId, cameraId: session.cameraId });
     session.status = "completed";
     session.endedAt = new Date();
     session.cloudUploaded = false;

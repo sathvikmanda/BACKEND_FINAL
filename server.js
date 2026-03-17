@@ -445,6 +445,13 @@ async function resolveComplaint(helpId) {
 
 
 
+// ============================================================
+// REPLACE verifyLockerClosedUntilLocked in app.js with this
+// Removed runDriveSync from here — it's already called by
+// /api/complaint/resolve and verifyLockerClosedUntilLocked
+// was triggering a second simultaneous sync causing race conditions
+// ============================================================
+
 async function verifyLockerClosedUntilLocked(
   addr,
   compartmentId,
@@ -469,13 +476,11 @@ async function verifyLockerClosedUntilLocked(
         await sleep(5000);
 
         if (helpId) {
-          await Promise.all([
-            resolveComplaint(helpId),
-            stopAllRecordingsForSession(helpId),
-            (async () =>
-              appendTimeline(BASE_DIR, helpId, "COMPLAINT RESOLVED"))(),
-            runDriveSync(BASE_DIR, compartmentId)
-          ]);
+          await resolveComplaint(helpId);
+          await stopAllRecordingsForSession(helpId);
+          appendTimeline(BASE_DIR, helpId, "COMPLAINT RESOLVED");
+          // ✅ runDriveSync removed from here — called by /api/complaint/resolve
+          // to avoid two syncs running simultaneously on the same session
         }
 
         return true;
