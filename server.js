@@ -242,16 +242,24 @@ const RATE_BY_SIZE = {
 
 app.post("/api/complaint", async (req, res) => {
   try {
-
     const helpId = "HR-" + Date.now();
 
-    await activateRecording(
-      BASE_DIR,
-      helpId,
-      "L01"
-    );
-
     appendTimeline(BASE_DIR, helpId, "COMPLAINT CREATED");
+
+    const cameras = getCameraConfig();
+    if (!cameras || cameras.length === 0) {
+      appendTimeline(BASE_DIR, helpId, "WARNING: No cameras configured");
+    }
+
+    try {
+      await activateRecording(BASE_DIR, helpId, "L00002");
+      for (const cam of cameras) {
+        appendTimeline(BASE_DIR, helpId, `RECORDING STARTED: ${cam.id}`);
+      }
+    } catch (err) {
+      appendTimeline(BASE_DIR, helpId, `ERROR: Recording failed to start — ${err.message}`);
+      console.error("Recording start failed:", err.message);
+    }
 
     res.json({ success: true, helpId });
 

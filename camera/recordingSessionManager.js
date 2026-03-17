@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const RecordingSession = require("../models/RecordingSession");
 const { getCameraConfig } = require("./recordingOrchestrator");
+const { appendTimeline } = require("./timelineWriter");
 
 const FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
 const activeSessions = new Map();
@@ -27,10 +28,8 @@ async function spawnRecording(rtspUrl, baseDir, helpId, lockerId, cameraId) {
     "-preset", "veryfast",
     "-crf", "28",
     "-c:a", "aac",
-    // 🔥 Fragmented MP4 — each fragment is self-contained
-    // File is valid/playable even if ffmpeg is killed mid-recording
     "-movflags", "+frag_keyframe+empty_moov+default_base_moof+faststart",
-    "-frag_duration", "5000000", // fragment every 5 seconds
+    "-frag_duration", "5000000",
     "-use_wallclock_as_timestamps", "1",
     outputFile
   ], {
@@ -43,6 +42,23 @@ async function spawnRecording(rtspUrl, baseDir, helpId, lockerId, cameraId) {
 
   ffmpeg.on("close", code => {
     console.log(`FFmpeg exited for ${key} with code ${code}`);
+    // 255 = SIGINT (normal graceful stop) — don't log as warning
+    if (code !== 0 && code !== 255) {
+      appendTimeline(
+        baseDir,
+        helpId,
+        `WARNING: Camera ${cameraId} stopped unexpectedly (exit code ${code})`
+      );
+    }
+  });
+
+  ffmpeg.on("error", (err) => {
+    console.error(`FFmpeg spawn error for ${key}:`, err.message);
+    appendTimeline(
+      baseDir,
+      helpId,
+      `ERROR: Camera ${cameraId} failed to start — ${err.message}`
+    );
   });
 
   activeSessions.set(key, {
@@ -62,17 +78,27 @@ async function spawnRecording(rtspUrl, baseDir, helpId, lockerId, cameraId) {
 
 async function startRecording(baseDir, helpId, lockerId) {
   const cameras = getCameraConfig();
+
   if (!cameras || cameras.length === 0) {
     console.error("No cameras configured");
+    appendTimeline(baseDir, helpId, "ERROR: No cameras configured — nothing recorded");
     return;
   }
 
   for (const cam of cameras) {
     if (!cam.rtsp) {
       console.error(`Missing RTSP URL for camera: ${cam.id}`);
+      appendTimeline(baseDir, helpId, `ERROR: No RTSP URL for ${cam.id} — skipped`);
       continue;
     }
-    await spawnRecording(cam.rtsp, baseDir, helpId, lockerId, cam.id);
+
+    try {
+      await spawnRecording(cam.rtsp, baseDir, helpId, lockerId, cam.id);
+      appendTimeline(baseDir, helpId, `RECORDING STARTED: ${cam.id}`);
+    } catch (err) {
+      console.error(`Failed to start recording for ${cam.id}:`, err.message);
+      appendTimeline(baseDir, helpId, `ERROR: Failed to start ${cam.id} — ${err.message}`);
+    }
   }
 }
 
@@ -90,7 +116,7 @@ async function stopRecording({ helpId, cameraId }) {
       ffmpeg.kill("SIGKILL");
       activeSessions.delete(key);
       resolve();
-    }, 8000); // hard kill after 8s
+    }, 8000);
 
     ffmpeg.on("close", code => {
       clearTimeout(timeout);
@@ -100,7 +126,6 @@ async function stopRecording({ helpId, cameraId }) {
       resolve();
     });
 
-    // SIGINT is the correct graceful stop for ffmpeg on Android
     ffmpeg.kill("SIGINT");
   });
 }
