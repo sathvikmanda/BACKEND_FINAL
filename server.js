@@ -2499,7 +2499,7 @@ app.post("/api/parcel/select-courier/:id", async (req, res) => {
 
 app.post('/api/razorpay/order', express.json(), async (req, res) => {
   try {
-    console.log("HOY");
+    console.log("/api/razorpay/order hit");
     const { parcelId, amount } = req.body;
 
     if (!parcelId) {
@@ -2523,9 +2523,10 @@ app.post('/api/razorpay/order', express.json(), async (req, res) => {
         message: 'Invalid overstay amount',
       });
     }
+    
 
     const order = await razorpay.orders.create({
-      amount: parcel.cost, // PAISA
+      amount: parseInt(parcel.cost,10), // PAISA
       currency: 'INR',
       receipt: `parcel_${parcel._id}`,
     });
