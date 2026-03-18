@@ -778,7 +778,7 @@ app.post("/terminal/dropoff", async (req, res) => {
     });
 
     const order = await razorpay.orders.create({
-      amount: 1 * 100,
+      amount: parseInt(total) * 100,
       currency: "INR",
       receipt: parcel.customId,
       notes: {
