@@ -570,7 +570,7 @@ app.post("/api/locker/scan", express.json(), async (req, res) => {
       result = await handleModifyFlow(accessCode, deps);
     } else if (flow === "PARCEL") {
       // 🔥 USE PICKUP FLOW (HAS OVERSTAY LOGIC)
-      result = await handlePickupFlow(accessCode, deps);
+      result = await handleParcelFlow(accessCode, deps);
     } else {
       return res.status(404).json({
         success: false,
@@ -1128,8 +1128,8 @@ app.post("/terminal/payment/drop-verify", async (req, res) => {
       from: "whatsapp:+15558076515",
       contentSid: "HX4200777a18b1135e502d60b796efe670",
       contentVariables: JSON.stringify({
-        1: parcel.receiverName,
-        2: parcel.senderName,
+        1: `${parcel.receiverPhone}`,
+        2: `${parcel.senderPhone}`,
         3: `mobile/incoming/${parcel.customId}/qr`,
         4: `dir/?api=1&destination=${parcel.lockerLat},${parcel.lockerLng}`,
       }),
