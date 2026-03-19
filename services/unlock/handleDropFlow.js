@@ -24,7 +24,7 @@ module.exports = async function handleDropFlow(
       };
     }
 
-    const locker = await Locker.findOne({ lockerId: "L00002" });
+    const locker = await Locker.findOne({ lockerId: "L01" });
 
     if (!locker) {
       return {
