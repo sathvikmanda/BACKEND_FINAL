@@ -69,10 +69,52 @@ const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
 const VERIFY_SID = TWILIO_VERIFY_SERVICE_SID;
 const WHATSAPP_VERIFY_SID = TWILIO_WHATSAPP_VERIFY_SID;
 
-mongoose
-  .connect(mongo_uri)
-  .then(() => console.log("mongo connected"))
-  .catch((err) => console.error("mongo not connected", err));
+// ─── Resilient MongoDB connection (auto-reconnects, never crashes server) ───
+const MONGO_CONNECT_OPTIONS = {
+  serverSelectionTimeoutMS: 10000, // give up selecting a server after 10 s
+  socketTimeoutMS: 45000,          // close sockets idle for 45 s
+  heartbeatFrequencyMS: 10000,     // check server health every 10 s
+};
+
+let _mongoRetryTimer = null;
+
+function connectMongo() {
+  if (_mongoRetryTimer) {
+    clearTimeout(_mongoRetryTimer);
+    _mongoRetryTimer = null;
+  }
+
+  mongoose
+    .connect(mongo_uri, MONGO_CONNECT_OPTIONS)
+    .then(() => console.log("[MongoDB] Connected successfully"))
+    .catch((err) => {
+      console.error("[MongoDB] Initial connection failed:", err.message);
+      scheduleMongoReconnect();
+    });
+}
+
+function scheduleMongoReconnect(delayMs = 5000) {
+  console.log(`[MongoDB] Retrying connection in ${delayMs / 1000}s …`);
+  _mongoRetryTimer = setTimeout(connectMongo, delayMs);
+}
+
+// Mongoose fires these events on an already-open connection
+mongoose.connection.on("connected", () =>
+  console.log("[MongoDB] Connection established")
+);
+mongoose.connection.on("disconnected", () => {
+  console.warn("[MongoDB] Disconnected — will reconnect automatically");
+  scheduleMongoReconnect();
+});
+mongoose.connection.on("error", (err) => {
+  console.error("[MongoDB] Connection error:", err.message);
+  // Force-close so the 'disconnected' event fires and triggers reconnect
+  mongoose.connection.close().catch(() => {});
+});
+
+// Start the initial connection (non-blocking — server keeps running either way)
+connectMongo();
+// ─────────────────────────────────────────────────────────────────────────────
 
 app.use(cors()); // allow Flutter to talk
 app.use(express.json());
@@ -2996,7 +3038,7 @@ async function heartbeat() {
 
   const payload = {
     lockerCode: LOCKER_CODE,
-    internetOnline: net.online,
+    internetOnline: true,
     latencyMs: net.latency,
     strength: net.online ? strength(net.latency) : "offline",
     deviceTime: new Date().toISOString(),
