@@ -14,10 +14,14 @@ module.exports = async function handleModifyFlow(accessCode, { Parcel2, Locker, 
     return { status: 404, body: { success: false, message: "Locker not found" }};
   }
 
-  const { sent } = await unlockCompartment(sendUnlock, parcel.compartmentId);
-  if (!sent) {
-    return { status: 502, body: { success: false, message: "Unlock failed" }};
-  }
+  const hw = await unlockCompartment({
+sendUnlock,
+checkLockerStatus,
+compartmentId: parcel.compartmentId,
+});
+if (!hw.ok) {
+return { status: 502, body: { success: false, message: "Unlock failed" } };
+}
 
   parcel.modifyCode = null;
   await parcel.save();
