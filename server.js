@@ -508,7 +508,7 @@ async function verifyLockerClosedUntilLocked(
 const resolveFlow = require("./services/unlock/resolveFlow");
 const handleModifyFlow = require("./services/unlock/handleModifyFlow");
 const handleParcelFlow = require("./services/unlock/handleParcelFlow");
-const handlePickupFlow = require("./services/unlock/handlePickupFlow.js");
+const handlePickupFlow = require("./services/unlock/handlePickupFlow.js")
 const handleDeliveryPickupFlow = require("./services/unlock/handleDeliveryDropFlow.js");
 const calculatePartnerRevenue = require("./utils/revenueCalc.js");
 const deps = {
@@ -571,7 +571,7 @@ app.post("/api/locker/scan", express.json(), async (req, res) => {
       result = await handleModifyFlow(accessCode, deps);
     } else if (flow === "PARCEL") {
       // 🔥 USE PICKUP FLOW (HAS OVERSTAY LOGIC)
-      result = await handleParcelFlow(accessCode, deps);
+      result = await handlePickupFlow(accessCode, deps);
     } else {
       return res.status(404).json({
         success: false,
@@ -924,12 +924,12 @@ app.post("/terminal/payment/verify", async (req, res) => {
       await parcel.save();
 
       // Background verification loop (non-blocking)
-    //   verifyLockerClosedUntilLocked(addr, lockNum, parcel.helpId, 1000)
-    //     .catch((err) => {
-    //       console.error("Verify loop crashed:", err);
-    //     });
+      verifyLockerClosedUntilLocked(addr, lockNum, parcel.helpId, 1000)
+        .catch((err) => {
+          console.error("Verify loop crashed:", err);
+        });
 
-    // } catch (err) {
+    } catch (err) {
       lockerError = err.message;
       console.error("⚠️ Locker allocation failed:", err.message);
     }
@@ -1104,7 +1104,7 @@ app.post("/terminal/payment/drop-verify", async (req, res) => {
     //     error: "Failed to unlock locker",
     //   });
     // }
-    // console.log("About to resolve complaint with helpId:", helpId);
+    console.log("About to resolve complaint with helpId:", helpId);
 
     // 🔍 START WATCH LOOP (non-blocking)
     // verifyLockerClosedUntilLocked(
@@ -1564,11 +1564,11 @@ app.post("/api/overstay/payment/verify", async (req, res) => {
     }
 
     const sent = await sendUnlock(lockNum, addr);
-    if (!sent) {
-      return res.status(502).json({ success: false, message: "Unlock failed" });
-    }
+    // if (!sent) {
+    //   return res.status(502).json({ success: false, message: "Unlock failed" });
+    // }
 
-    await wait(500);
+    // await wait(500);
     // const hwStatus = await checkLockerStatus(addr, lockNum, 2000);
     // if (hwStatus !== "Unlocked") {
     //   return res
