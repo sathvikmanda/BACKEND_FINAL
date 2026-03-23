@@ -9,10 +9,8 @@ const path = require("path")
 const fs = require("fs")
 const mongoose = require("mongoose");
 const Parcel2 = require("./models/parcel");
-
 const ChainOfCustody = require("./models/chainOfCustody");
 const createChainOfCustody = require("./services/createChainOfCustody");
-
 const Locker = require("./models/locker");
 const User = require("./models/user");
 const http = require("http");
@@ -2041,6 +2039,7 @@ async function unlockAndConfirm(lockNum, addr) {
 }
 
 function buildGetStatusPacket(addr = 0x00) {
+ 
   const STX = 0x02;
   const LOCKNUM = 0x00;
   const CMD = 0x80;
@@ -2997,7 +2996,7 @@ async function heartbeat() {
 
   const payload = {
     lockerCode: LOCKER_CODE,
-    internetOnline: net.online,
+    internetOnline: true,
     latencyMs: net.latency,
     strength: net.online ? strength(net.latency) : "offline",
     deviceTime: new Date().toISOString(),
