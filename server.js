@@ -1795,12 +1795,12 @@ app.post("/personal/dropoff", async (req, res) => {
         // ----------- NOTIFICATIONS -----------
 
         if (parcel.store_self) {
-          // await client.messages.create({
-          //   to: `whatsapp:+91${parcel.senderPhone}`,
-          //   from: "whatsapp:+15558076515",
-          //   contentSid: "HXa7a69894f9567b90c1cacab6827ff46c",
+          await client.messages.create({
+            to: `whatsapp:+91${parcel.senderPhone}`,
+            from: "whatsapp:+15558076515",
+            contentSid: "HXa7a69894f9567b90c1cacab6827ff46c",
 
-          // });
+          });
 
           const smsText2 = `Item successfully dropped at Locker ${locker.lockerId
             }. Pickup code: ${parcel.accessCode
@@ -1810,17 +1810,17 @@ app.post("/personal/dropoff", async (req, res) => {
 
         } else {
 
-          // await client.messages.create({
-          //   to: `whatsapp:+91${parcel.receiverPhone}`,
-          //   from: "whatsapp:+15558076515",
-          //   contentSid: "HX4200777a18b1135e502d60b796efe670",
-          //   contentVariables: JSON.stringify({
-          //     1: parcel.receiverName || "",
-          //     2: parcel.senderName || "",
-          //     3: `mobile/incoming/${parcel.customId}/qr`,
-          //     4: `dir/?api=1&destination=${parcel.lockerLat || ""},${parcel.lockerLng || ""}`,
-          //   }),
-          // });
+          await client.messages.create({
+            to: `whatsapp:+91${parcel.receiverPhone}`,
+            from: "whatsapp:+15558076515",
+            contentSid: "HX7e2cecaedcafdf5ce9b8ceaec696d8a1",
+            contentVariables: JSON.stringify({
+              1: parcel.senderPhone,
+              2: parcel.receiverPhone,
+              3: `mobile/incoming/${parcel.customId}/qr`,
+            
+            }),
+          });
         }
 
         const smsText3 = `Item successfully dropped at Locker ${locker.lockerId
