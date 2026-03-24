@@ -726,7 +726,7 @@ app.post("/terminal/dropoff", async (req, res) => {
       return res.status(400).json({ error: "Missing helpId" });
     }
 
-   
+
 
     size = size.toLowerCase();
     const PRICES = { small: 5, medium: 10, large: 20 };
@@ -883,7 +883,7 @@ app.post("/terminal/payment/verify", async (req, res) => {
     parcel.razorpaySignature = razorpay_signature;
     parcel.paidAt = new Date();
     await parcel.save();
-   
+
 
     let lockerError = null;
 
@@ -985,7 +985,7 @@ app.post("/terminal/payment/verify", async (req, res) => {
       },
 
       history: [
-       
+
         {
           actorType: "user",
           actorIdentifier: parcel.senderPhone,
@@ -1137,32 +1137,32 @@ app.post("/terminal/payment/drop-verify", async (req, res) => {
     const smsText1 = `Your Drop Point Locker Access Code is ${parcel.accessCode}. Please don't share this with anyone. -DROPPOINT`;
     sendSMS(`91${parcel.senderPhone}`, smsText1);
     await ChainOfCustody.create({
-      parcelId : parcel._id,
-      intent : "personal_drop",
+      parcelId: parcel._id,
+      intent: "personal_drop",
 
-      currentOwner:{
-        ownerType : "user",
-        identity:{
-          phone : parcel.receiverPhone
+      currentOwner: {
+        ownerType: "user",
+        identity: {
+          phone: parcel.receiverPhone
         }
       },
 
-      currentCustodyHolder : {
-        holderType : "droppoint",
-        identity : {
-          lockerId : lockerID
+      currentCustodyHolder: {
+        holderType: "droppoint",
+        identity: {
+          lockerId: lockerID
         }
       },
 
-      history : [
+      history: [
         {
-          actorType : "user",
-          actorIdentifier : parcel.senderPhone,
-          eventType : "dropped_by_sender"
-        },{
-          actorType : "droppoint",
-          actorIdentifier : lockerID,
-          eventType : "custody_transferred_to_locker"
+          actorType: "user",
+          actorIdentifier: parcel.senderPhone,
+          eventType: "dropped_by_sender"
+        }, {
+          actorType: "droppoint",
+          actorIdentifier: lockerID,
+          eventType: "custody_transferred_to_locker"
         }
       ]
     })
@@ -1818,7 +1818,7 @@ app.post("/personal/dropoff", async (req, res) => {
               1: parcel.senderPhone,
               2: parcel.receiverPhone,
               3: `mobile/incoming/${parcel.customId}/qr`,
-            
+
             }),
           });
         }
@@ -2039,7 +2039,7 @@ async function unlockAndConfirm(lockNum, addr) {
 }
 
 function buildGetStatusPacket(addr = 0x00) {
- 
+
   const STX = 0x02;
   const LOCKNUM = 0x00;
   const CMD = 0x80;
@@ -2528,10 +2528,10 @@ app.post('/api/razorpay/order', express.json(), async (req, res) => {
         message: 'Invalid overstay amount',
       });
     }
-    
+
 
     const order = await razorpay.orders.create({
-      amount: parseInt(parcel.cost,10) * 100, // PAISA
+      amount: parseInt(parcel.cost, 10) * 100, // PAISA
       currency: 'INR',
       receipt: `parcel_${parcel._id}`,
     });
@@ -2902,8 +2902,8 @@ const LOCKER_CODE = "L01";
 const ADMIN_URL = "https://admin.droppoint.in/api/locker-heartbeat";
 const LOCKER_KEY = "supersecretkey";
 
-const HEARTBEAT_INTERVAL = 5000;
-const POST_TIMEOUT = 10000;
+const HEARTBEAT_INTERVAL = 10000;  // 10s between each heartbeat
+const POST_TIMEOUT = 8000;         // must be < HEARTBEAT_INTERVAL to avoid pileup
 
 
 // =====================
@@ -2978,7 +2978,7 @@ async function postHeartbeat(payload) {
       }
     );
 
-    
+
   } catch (e) {
 
 
@@ -2990,20 +2990,36 @@ async function postHeartbeat(payload) {
 // ❤️ HEARTBEAT LOOP
 // =====================
 
+let isHeartbeating = false;  // 🛡️ guard: prevent overlapping calls
+
 async function heartbeat() {
 
-  const net = await pingHost();
+  if (isHeartbeating) {
+    console.log("⏭️ Heartbeat skipped — previous still running");
+    return;
+  }
 
-  const payload = {
-    lockerCode: LOCKER_CODE,
-    internetOnline: true,
-    latencyMs: net.latency,
-    strength: net.online ? strength(net.latency) : "offline",
-    deviceTime: new Date().toISOString(),
-    agentVersion: "2.0.0"
-  };
+  isHeartbeating = true;
 
-  await postHeartbeat(payload);
+  try {
+    const net = await pingHost();
+
+    const payload = {
+      lockerCode: LOCKER_CODE,
+      internetOnline: true,
+      latencyMs: net.latency,
+      strength: net.online ? strength(net.latency) : "offline",
+      deviceTime: new Date().toISOString(),
+      agentVersion: "2.0.0"
+    };
+
+    await postHeartbeat(payload);
+
+  } catch (e) {
+    // silent — never crash the server
+  } finally {
+    isHeartbeating = false;  // always release the guard
+  }
 
 }
 
@@ -3012,9 +3028,7 @@ async function heartbeat() {
 // 🔁 START LOOP
 // =====================
 
-setInterval(heartbeat, HEARTBEAT_INTERVAL);
 
-heartbeat();
 
 // =====================
 // 🚀 START
