@@ -1281,7 +1281,7 @@ app.post("/api/locker/:lockerId/click", async (req, res) => {
     { lockerId },
     { $inc: { [fieldToInc]: 1 } }
   );
-  console.log("UPDATED");
+
 
   res.json({ success: true });
 });
