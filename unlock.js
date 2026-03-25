@@ -34,7 +34,7 @@ const ALL_LOCKS = [
   ...Array.from({ length: 11 }, (_, i) => ({ addr: 0x00, compartmentId: i })),
 
   // addr 0x01 → indices 0 through 4
-  ...Array.from({ length: 5 }, (_, i) => ({ addr: 0x01, compartmentId: i })),
+  ...Array.from({ length: 6 }, (_, i) => ({ addr: 0x01, compartmentId: i })),
 ];
 
 // ─── Packet builders (identical to server.js) ─────────────────────────────────
