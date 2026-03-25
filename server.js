@@ -3040,6 +3040,50 @@ heartbeat();
 setInterval(heartbeat, HEARTBEAT_INTERVAL);
 
 
+// =============================================
+// 🔓 UNLOCK CRON — every 2 seconds
+// Watches DB for compartments where isLocked
+// becomes false and sends hardware unlock cmd.
+// =============================================
+
+let isUnlockCronRunning = false; // guard: skip if previous tick still executing
+
+setInterval(async () => {
+  if (isUnlockCronRunning) return;
+  isUnlockCronRunning = true;
+
+  try {
+    const locker = await Locker.findOne({ lockerId: lockerID }).lean();
+    if (!locker) return;
+
+    const toUnlock = locker.compartments.filter(c => c.isLocked === false);
+
+    for (const compartment of toUnlock) {
+      const rawId = parseInt(compartment.compartmentId, 10);
+
+      let addr = 0x00;
+      let lockNum = rawId;
+
+      if (rawId > 10) {
+        addr = 0x01;
+        lockNum = rawId - 11;
+      }
+
+      try {
+        await sendUnlock(lockNum, addr);
+        console.log(`🔓 Unlock sent → compartmentId=${compartment.compartmentId} (lockNum=${lockNum}, addr=0x${addr.toString(16).toUpperCase()})`);
+      } catch (err) {
+        console.error(`❌ Unlock failed for compartmentId=${compartment.compartmentId}:`, err.message);
+      }
+    }
+  } catch (err) {
+    console.error("❌ Unlock cron error:", err.message);
+  } finally {
+    isUnlockCronRunning = false;
+  }
+}, 2000);
+
+
 bootstrap().catch((err) => {
   console.error("❌ Fatal bootstrap error:", err);
   process.exit(1);
