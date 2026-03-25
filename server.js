@@ -2976,7 +2976,7 @@ async function postHeartbeat(payload) {
       }
     );
 
-    console.log("✅ Sent to server:", res.status);
+    //console.log("✅ Sent to server:", res.status);
 
   } catch (e) {
     console.log("❌ POST FAILED:", e.message);
@@ -3000,30 +3000,30 @@ async function heartbeat() {
     const vitals = await getVitals();
 
     // 🔥 PRINT CLEAN VITALS
-    console.log("\n================ HEARTBEAT =================");
-    console.log("Locker:", LOCKER_CODE);
-    console.log("Time:", new Date().toLocaleString());
+    // console.log("\n================ HEARTBEAT =================");
+    // console.log("Locker:", LOCKER_CODE);
+    // console.log("Time:", new Date().toLocaleString());
 
-    console.log("🌐 Network:", net);
+    // console.log("🌐 Network:", net);
 
-    console.log("🧠 RAM:", vitals?.ram
-      ? `${Math.round(vitals.ram.used / 1024 / 1024)}MB / ${Math.round(vitals.ram.total / 1024 / 1024)}MB`
-      : "N/A"
-    );
+    // console.log("🧠 RAM:", vitals?.ram
+    //   ? `${Math.round(vitals.ram.used / 1024 / 1024)}MB / ${Math.round(vitals.ram.total / 1024 / 1024)}MB`
+    //   : "N/A"
+    // );
 
-    console.log("⚡ CPU Load:", vitals?.cpu?.load ?? "N/A");
+    // console.log("⚡ CPU Load:", vitals?.cpu?.load ?? "N/A");
 
-    console.log("💾 Storage:", vitals?.storage?.length
-      ? vitals.storage.map(s => `${s.mount}: ${Math.round(s.used/1e9)}GB`).join(", ")
-      : "N/A"
-    );
+    // console.log("💾 Storage:", vitals?.storage?.length
+    //   ? vitals.storage.map(s => `${s.mount}: ${Math.round(s.used/1e9)}GB`).join(", ")
+    //   : "N/A"
+    // );
 
-    console.log("🔋 Battery:", vitals?.battery
-      ? `${vitals.battery.percent}% ${vitals.battery.isCharging ? "(Charging)" : ""}`
-      : "N/A"
-    );
+    // console.log("🔋 Battery:", vitals?.battery
+    //   ? `${vitals.battery.percent}% ${vitals.battery.isCharging ? "(Charging)" : ""}`
+    //   : "N/A"
+    // );
 
-    console.log("============================================\n");
+    // console.log("============================================\n");
 
     const payload = {
       lockerCode: LOCKER_CODE,
@@ -3039,7 +3039,7 @@ async function heartbeat() {
       }
     };
 
-    console.log("📡 Sending payload:", JSON.stringify(payload, null, 2));
+ //   console.log("📡 Sending payload:", JSON.stringify(payload, null, 2));
 
     await postHeartbeat(payload);
 
