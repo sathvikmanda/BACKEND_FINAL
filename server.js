@@ -250,7 +250,7 @@ app.post("/api/complaint", async (req, res) => {
     }
 
     try {
-      await activateRecording(BASE_DIR, helpId, "L00002");
+      await activateRecording(BASE_DIR, helpId, "L01");
       for (const cam of cameras) {
         appendTimeline(BASE_DIR, helpId, `RECORDING STARTED: ${cam.id}`);
       }
@@ -2964,10 +2964,8 @@ function strength(lat) {
 // =====================
 
 async function postHeartbeat(payload) {
-
   try {
-
-    await axios.post(
+    const res = await axios.post(
       ADMIN_URL,
       payload,
       {
@@ -2978,10 +2976,10 @@ async function postHeartbeat(payload) {
       }
     );
 
+    console.log("✅ Sent to server:", res.status);
 
   } catch (e) {
-
-
+    console.log("❌ POST FAILED:", e.message);
   }
 }
 
@@ -3001,13 +2999,37 @@ async function heartbeat() {
     const net = await pingHost();
     const vitals = await getVitals();
 
+    // 🔥 PRINT CLEAN VITALS
+    console.log("\n================ HEARTBEAT =================");
+    console.log("Locker:", LOCKER_CODE);
+    console.log("Time:", new Date().toLocaleString());
+
+    console.log("🌐 Network:", net);
+
+    console.log("🧠 RAM:", vitals?.ram
+      ? `${Math.round(vitals.ram.used / 1024 / 1024)}MB / ${Math.round(vitals.ram.total / 1024 / 1024)}MB`
+      : "N/A"
+    );
+
+    console.log("⚡ CPU Load:", vitals?.cpu?.load ?? "N/A");
+
+    console.log("💾 Storage:", vitals?.storage?.length
+      ? vitals.storage.map(s => `${s.mount}: ${Math.round(s.used/1e9)}GB`).join(", ")
+      : "N/A"
+    );
+
+    console.log("🔋 Battery:", vitals?.battery
+      ? `${vitals.battery.percent}% ${vitals.battery.isCharging ? "(Charging)" : ""}`
+      : "N/A"
+    );
+
+    console.log("============================================\n");
+
     const payload = {
       lockerCode: LOCKER_CODE,
-
       internetOnline: net.online,
       latencyMs: net.latency,
       strength: net.online ? strength(net.latency) : "offline",
-
       deviceTime: new Date().toISOString(),
       agentVersion: "2.1.0",
       vitals,
@@ -3017,15 +3039,16 @@ async function heartbeat() {
       }
     };
 
+    console.log("📡 Sending payload:", JSON.stringify(payload, null, 2));
+
     await postHeartbeat(payload);
 
   } catch (e) {
-
+    console.log("❌ HEARTBEAT ERROR:", e.message);
   } finally {
     isHeartbeating = false;
   }
 }
-
 
 
 
