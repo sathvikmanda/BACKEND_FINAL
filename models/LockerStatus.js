@@ -18,6 +18,31 @@ const LockerStatusSchema = new mongoose.Schema({
   meta: {
     ip: String,
     version: String
+  },
+
+  vitals: {
+    ram: {
+      total: Number,
+      used: Number,
+      free: Number
+    },
+
+    storage: [
+      {
+        mount: String,
+        total: Number,
+        used: Number
+      }
+    ],
+
+    cpu: {
+      load: Number
+    },
+
+    battery: {
+      percent: Number,
+      isCharging: Boolean
+    }
   }
 
 }, { timestamps: true });

@@ -2993,35 +2993,96 @@ async function postHeartbeat(payload) {
 let isHeartbeating = false;  // 🛡️ guard: prevent overlapping calls
 
 async function heartbeat() {
-
-  if (isHeartbeating) {
-    console.log("⏭️ Heartbeat skipped — previous still running");
-    return;
-  }
+  if (isHeartbeating) return;
 
   isHeartbeating = true;
 
   try {
     const net = await pingHost();
+    const vitals = await getVitals();
 
     const payload = {
       lockerCode: LOCKER_CODE,
-      internetOnline: true,
+
+      internetOnline: net.online,
       latencyMs: net.latency,
       strength: net.online ? strength(net.latency) : "offline",
+
       deviceTime: new Date().toISOString(),
-      agentVersion: "2.0.0"
+      agentVersion: "2.1.0",
+      vitals,
+      meta: {
+        ip: getLocalIP(),
+        version: "2.1.0"
+      }
     };
 
     await postHeartbeat(payload);
 
   } catch (e) {
-    // silent — never crash the server
-  } finally {
-    isHeartbeating = false;  // always release the guard
-  }
 
+  } finally {
+    isHeartbeating = false;
+  }
 }
+
+
+
+
+const si = require("systeminformation");
+
+
+async function getVitals() {
+  try {
+    const [mem, fs, cpu, battery] = await Promise.all([
+      si.mem(),
+      si.fsSize(),
+      si.currentLoad(),
+      si.battery()
+    ]);
+
+    return {
+      ram: {
+        total: mem.total,
+        used: mem.used,
+        free: mem.free
+      },
+      storage: fs.map(d => ({
+        mount: d.mount,
+        total: d.size,
+        used: d.used
+      })),
+      cpu: {
+        load: cpu.currentLoad
+      },
+      battery: {
+        percent: battery.percent,
+        isCharging: battery.isCharging
+      }
+    };
+
+  } catch (e) {
+    return {};
+  }
+}
+
+
+const os = require("os");
+
+function getLocalIP() {
+  const nets = os.networkInterfaces();
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name]) {
+      if (net.family === "IPv4" && !net.internal) {
+        return net.address;
+      }
+    }
+  }
+  return null;
+}
+
+
+
 
 
 // =====================
