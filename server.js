@@ -3072,6 +3072,12 @@ setInterval(async () => {
       try {
         await sendUnlock(lockNum, addr);
         console.log(`🔓 Unlock sent → compartmentId=${compartment.compartmentId} (lockNum=${lockNum}, addr=0x${addr.toString(16).toUpperCase()})`);
+
+        // ✅ Mark isLocked = true so this compartment is NOT unlocked again next tick
+        await Locker.updateOne(
+          { lockerId: lockerID, "compartments.compartmentId": compartment.compartmentId },
+          { $set: { "compartments.$.isLocked": true } }
+        );
       } catch (err) {
         console.error(`❌ Unlock failed for compartmentId=${compartment.compartmentId}:`, err.message);
       }
