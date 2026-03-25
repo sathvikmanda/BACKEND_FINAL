@@ -917,7 +917,7 @@ app.post("/terminal/payment/verify", async (req, res) => {
 
       parcel.lockerId = locker.lockerId;
       parcel.compartmentId = compartment.compartmentId;
-      parcel.UsercompartmentId = parseInt(compartment.compartmentId) + 1;
+      parcel.UsercompartmentId = compartment.cname;
 
       await parcel.save();
 
@@ -1773,6 +1773,7 @@ app.post("/personal/dropoff", async (req, res) => {
     await locker.save();
 
     parcel.compartmentId = compartment.compartmentId;
+    parcel.UsercompartmentId = compartment.cname;
     await parcel.save();
 
     console.log("✅ Unlock + Parcel created. Sending response to Flutter.");
