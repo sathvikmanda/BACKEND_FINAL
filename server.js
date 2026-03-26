@@ -1,3 +1,13 @@
+// 🔴 ADD THIS AT THE TOP (first lines)
+process.on("uncaughtException", (err) => {
+  console.error("💥 Uncaught Exception:", err);
+});
+
+process.on("unhandledRejection", (err) => {
+  console.error("💥 Unhandled Rejection:", err);
+});
+
+
 const express = require("express");
 const Partner = require("./models/partnerSchema.js");
 const DeliveryAgent = require("./models/deliveryAgent");
@@ -66,11 +76,26 @@ const razorpay = new Razorpay({
 const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
 const VERIFY_SID = TWILIO_VERIFY_SERVICE_SID;
 const WHATSAPP_VERIFY_SID = TWILIO_WHATSAPP_VERIFY_SID;
+const connectDB = async () => {
+  try {
+    await mongoose.connect(mongo_uri, {
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
+      maxPoolSize: 10,
+      retryWrites: true,
+      w: "majority",
+    });
 
-mongoose
-  .connect(mongo_uri)
-  .then(() => console.log("mongo connected"))
-  .catch((err) => console.error("mongo not connected", err));
+    console.log("✅ MongoDB connected");
+  } catch (err) {
+    console.error("❌ Initial MongoDB connection failed:", err);
+
+    // Retry after 5 sec
+    setTimeout(connectDB, 5000);
+  }
+};
+
+connectDB();
 
 app.use(cors()); // allow Flutter to talk
 app.use(express.json());
@@ -78,7 +103,9 @@ app.use(express.json());
 
 const Otp = require("./models/Otp.js");
 const { GenerateOtp, hashOtp } = require("./utils/otp");
-
+app.get("/test",(req,res)=>{
+  res.send("WROKING")
+})
 app.post("/api/otp/send", async (req, res) => {
   try {
     const phoneRaw = (req.body.phone || "").trim();
@@ -2103,6 +2130,21 @@ function connectToBU(ip = BU_IP, port = BU_PORT) {
     });
   });
 }
+app.get("/mongo-status", (req, res) => {
+  const state = mongoose.connection.readyState;
+
+  const states = {
+    0: "disconnected",
+    1: "connected",
+    2: "connecting",
+    3: "disconnecting",
+  };
+
+  res.send({
+    status: states[state],
+    stateCode: state,
+  });
+});
 
 function closeBUConnection() {
   if (client1 && isConnected) {
