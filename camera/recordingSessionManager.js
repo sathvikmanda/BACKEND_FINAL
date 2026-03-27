@@ -20,10 +20,7 @@ async function spawnRecording(rtspUrl, baseDir, helpId, lockerId, cameraId) {
     "-fflags", "+genpts",
     "-rtsp_transport", "tcp",
     "-i", rtspUrl,
-    "-c:v", "libx264",
-    "-preset", "veryfast",
-    "-crf", "28",
-    "-c:a", "aac",
+    "-c", "copy", // zero encode CPU load
     "-movflags", "+frag_keyframe+empty_moov+default_base_moof+faststart",
     "-frag_duration", "5000000",
     "-use_wallclock_as_timestamps", "1",

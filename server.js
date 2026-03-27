@@ -39,6 +39,7 @@ const twilio = require("twilio");
 const { runDriveSync } = require("./camera/driveSyncWorker");
 const { checkStorageAndSync, cleanOrphanedFolders } = require("./camera/storageMonitor");
 const { appendTimeline } = require("./camera/timelineWriter");
+const { checkAllCameras, checkCameraVitals } = require("./camera/cameraHealth");
 const BASE_DIR = path.join(__dirname, "recordings");
 const session = require("express-session");
 const CAMERAS = [
@@ -290,6 +291,31 @@ app.post("/api/complaint", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false });
+  }
+});
+
+app.get("/api/cameras/health", async (req, res) => {
+  try {
+    const cameras = getCameraConfig();
+    if (!cameras || cameras.length === 0) {
+      return res.status(200).json({ ok: false, reason: "no_cameras_configured", cameras: [] });
+    }
+
+    const cameraId = req.query.id;
+    if (cameraId) {
+      const camera = cameras.find((c) => c.id === cameraId);
+      if (!camera) {
+        return res.status(404).json({ ok: false, reason: "camera_not_found", cameraId });
+      }
+      const status = await checkCameraVitals(camera);
+      return res.json({ ok: true, cameras: [status] });
+    }
+
+    const statuses = await checkAllCameras(cameras);
+    return res.json({ ok: true, cameras: statuses });
+  } catch (err) {
+    console.error("Camera health check failed:", err);
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 
