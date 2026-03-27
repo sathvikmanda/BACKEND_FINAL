@@ -1253,10 +1253,12 @@ app.post("/terminal/authdropoff", async (req, res) => {
       lockerId: lockerID,
       hours: hrs,
       terminal_store: true,
+
       accessCode: Math.floor(100000 + Math.random() * 900000).toString(),
       customId,
       cost: total,
       createdAt,
+      isDropoff: true,
       expiresAt,
       status: "awaiting_payment",
       paymentStatus: "pending",
