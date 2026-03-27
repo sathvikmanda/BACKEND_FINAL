@@ -2892,224 +2892,6 @@ app.get("/payment", (req, res) => {
   res.render("payment.html");
 });
 
-const axios = require("axios");
-const { exec } = require("child_process");
-
-
-// =====================
-// ⚙️ CONFIG
-// =====================
-
-const LOCKER_CODE = "L01";
-const ADMIN_URL = "https://admin.droppoint.in/api/locker-heartbeat";
-const LOCKER_KEY = "supersecretkey";
-
-const HEARTBEAT_INTERVAL = 10000;  // 10s between each heartbeat
-const POST_TIMEOUT = 8000;         // must be < HEARTBEAT_INTERVAL to avoid pileup
-
-
-// =====================
-// 🌐 CROSS PLATFORM PING
-// =====================
-
-function pingHost(host = "8.8.8.8") {
-
-  const isWin = process.platform === "win32";
-  const cmd = isWin
-    ? `ping -n 2 ${host}`
-    : `ping -c 2 ${host}`;
-
-  return new Promise(resolve => {
-
-    exec(cmd, { timeout: 6000 }, (err, stdout) => {
-
-      if (err || !stdout) {
-        return resolve({ online: false, latency: null });
-      }
-
-      const txt = stdout.toString();
-      let latency = null;
-
-      if (isWin) {
-        const m = txt.match(/Average = (\d+)/);
-        if (m) latency = parseInt(m[1]);
-      } else {
-        const m = txt.match(/time[=<]\s*([\d.]+)/);
-        if (m) latency = Math.round(parseFloat(m[1]));
-      }
-
-      resolve({
-        online: true,
-        latency
-      });
-
-    });
-
-  });
-}
-
-
-// =====================
-// 📊 STRENGTH
-// =====================
-
-function strength(lat) {
-  if (lat == null) return "unknown";
-  if (lat < 50) return "strong";
-  if (lat < 120) return "medium";
-  return "weak";
-}
-
-
-// =====================
-// 📡 POST HEARTBEAT
-// =====================
-
-async function postHeartbeat(payload) {
-  try {
-    const res = await axios.post(
-      ADMIN_URL,
-      payload,
-      {
-        timeout: POST_TIMEOUT,
-        headers: {
-          "x-locker-key": LOCKER_KEY
-        }
-      }
-    );
-
-    //console.log("✅ Sent to server:", res.status);
-
-  } catch (e) {
-    console.log("❌ POST FAILED:", e.message);
-  }
-}
-
-
-// =====================
-// ❤️ HEARTBEAT LOOP
-// =====================
-
-let isHeartbeating = false;  // 🛡️ guard: prevent overlapping calls
-
-async function heartbeat() {
-  if (isHeartbeating) return;
-
-  isHeartbeating = true;
-
-  try {
-    const net = await pingHost();
-    const vitals = await getVitals();
-
-    // 🔥 PRINT CLEAN VITALS
-    // console.log("\n================ HEARTBEAT =================");
-    // console.log("Locker:", LOCKER_CODE);
-    // console.log("Time:", new Date().toLocaleString());
-
-    // console.log("🌐 Network:", net);
-
-    // console.log("🧠 RAM:", vitals?.ram
-    //   ? `${Math.round(vitals.ram.used / 1024 / 1024)}MB / ${Math.round(vitals.ram.total / 1024 / 1024)}MB`
-    //   : "N/A"
-    // );
-
-    // console.log("⚡ CPU Load:", vitals?.cpu?.load ?? "N/A");
-
-    // console.log("💾 Storage:", vitals?.storage?.length
-    //   ? vitals.storage.map(s => `${s.mount}: ${Math.round(s.used/1e9)}GB`).join(", ")
-    //   : "N/A"
-    // );
-
-    // console.log("🔋 Battery:", vitals?.battery
-    //   ? `${vitals.battery.percent}% ${vitals.battery.isCharging ? "(Charging)" : ""}`
-    //   : "N/A"
-    // );
-
-    // console.log("============================================\n");
-
-    const payload = {
-      lockerCode: LOCKER_CODE,
-      internetOnline: net.online,
-      latencyMs: net.latency,
-      strength: net.online ? strength(net.latency) : "offline",
-      deviceTime: new Date().toISOString(),
-      agentVersion: "2.1.0",
-      vitals,
-      meta: {
-        ip: getLocalIP(),
-        version: "2.1.0"
-      }
-    };
-
- //   console.log("📡 Sending payload:", JSON.stringify(payload, null, 2));
-
-    await postHeartbeat(payload);
-
-  } catch (e) {
-    console.log("❌ HEARTBEAT ERROR:", e.message);
-  } finally {
-    isHeartbeating = false;
-  }
-}
-
-
-
-const si = require("systeminformation");
-
-
-async function getVitals() {
-  try {
-    const [mem, fs, cpu, battery] = await Promise.all([
-      si.mem(),
-      si.fsSize(),
-      si.currentLoad(),
-      si.battery()
-    ]);
-
-    return {
-      ram: {
-        total: mem.total,
-        used: mem.used,
-        free: mem.free
-      },
-      storage: fs.map(d => ({
-        mount: d.mount,
-        total: d.size,
-        used: d.used
-      })),
-      cpu: {
-        load: cpu.currentLoad
-      },
-      battery: {
-        percent: battery.percent,
-        isCharging: battery.isCharging
-      }
-    };
-
-  } catch (e) {
-    return {};
-  }
-}
-
-
-const os = require("os");
-
-function getLocalIP() {
-  const nets = os.networkInterfaces();
-  for (const name of Object.keys(nets)) {
-    for (const net of nets[name]) {
-      if (net.family === "IPv4" && !net.internal) {
-        return net.address;
-      }
-    }
-  }
-  return null;
-}
-
-
-
-
-
 // =====================
 // 🔁 START LOOP
 // =====================
@@ -3119,11 +2901,337 @@ function getLocalIP() {
 // =====================
 // 🚀 START
 // =====================
+/**
+ * server.js — Droppoint Edge Locker Agent v3.4.0
+ *
+ * ─── ONE-TIME SETUP ON THE TABLET ───────────────────────────────────────────
+ *
+ *  Step 1 — Install from F-Droid (NOT Google Play):
+ *    https://f-droid.org/en/packages/com.termux/
+ *    https://f-droid.org/en/packages/com.termux.api/
+ *
+ *  Step 2 — Inside Termux:
+ *    pkg update && pkg upgrade -y
+ *    pkg install nodejs npm termux-api curl inetutils
+ *    npm install axios
+ *
+ *  Step 3 — Grant permissions (Android Settings → Apps → Termux:API → Permissions):
+ *    ✅ Location → "Allow all the time"   ← GPS + WiFi SSID + cell info
+ *    ✅ Phone                             ← telephony device/cell info
+ *
+ *  Step 4 — Edit HW_CONFIG in hardware.js with your device IPs
+ *
+ *  Step 5 — Keep alive through screen-off:
+ *    termux-wake-lock
+ *    node server.js
+ *    # or: PROFILER_DEBUG=1 node server.js   ← enable timing output
+ *
+ *  Step 6 — Auto-start on reboot:
+ *    pkg install termux-boot
+ *    mkdir -p ~/.termux/boot
+ *    printf '#!/data/data/com.termux/files/usr/bin/sh\ntermux-wake-lock\ncd ~/droppoint && node server.js\n' \
+ *      > ~/.termux/boot/start.sh
+ *    chmod +x ~/.termux/boot/start.sh
+ *    # Grant Termux:Boot the "Run in background" permission in Android settings
+ *
+ * ─── PROFILER DEBUG MODE ────────────────────────────────────────────────────
+ *
+ *  Normal run (silent profiling — stats accumulate, no console output):
+ *    node server.js
+ *
+ *  Debug run (timing + memory logged to console + .profile.json file):
+ *    PROFILER_DEBUG=1 node server.js
+ *
+ *  The profile log is written to .profile.json after every flush cycle.
+ *  Read it with:  cat .profile.json | python3 -m json.tool
+ */
 
-console.log("🚀 Kiosk Agent v2 started:", LOCKER_CODE);
+"use strict";
+
+const axios    = require("axios");
+const profiler = require("./profiler");
+const { getVitals, recordHeartbeat } = require("./vitals");
+const { getHardwareVitals }          = require("./hardware");
+const { getLocation }                = require("./location");
+
+
+// ─── configuration ────────────────────────────────────────────────────────────
+
+const LOCKER_CODE        = "L01";
+const ADMIN_URL          = "https://admin.droppoint.in/api/locker-heartbeat";
+const LOCKER_KEY         = "supersecretkey";
+const AGENT_VERSION      = "3.4.0";
+
+const HEARTBEAT_INTERVAL = 15_000;   // ms — do not set below 10 s
+const POST_TIMEOUT       = 8_000;    // must be < HEARTBEAT_INTERVAL
+const HW_PROBE_EVERY     = 2;        // probe BU + cameras every N beats
+const PROFILE_FLUSH_EVERY = 20;      // flush profiler log every N beats (~5 min)
+
+
+// ─── cloud POST ───────────────────────────────────────────────────────────────
+//
+// Wrapped in profiler.trace() so every POST records:
+//   • total round-trip time (ms)
+//   • heap delta caused by the request/response buffers
+//   • success/failure flag
+//   • anomaly flag if it exceeds the 5 s threshold in CONFIG.THRESHOLDS
+//
+// The profiler measures time from axios.post() call until the Promise settles,
+// which captures: DNS (cached), TCP, TLS, server processing, and response read.
+
+async function post(payload) {
+  let httpStatus = null;
+
+  try {
+    const res = await profiler.trace(
+      "post.cloud",
+      () => axios.post(ADMIN_URL, payload, {
+        timeout: POST_TIMEOUT,
+        headers: {
+          "Content-Type": "application/json",
+          "x-locker-key": LOCKER_KEY,
+          "x-agent-ver":  AGENT_VERSION,
+        },
+      }),
+      { url: ADMIN_URL, payloadBytes: Buffer.byteLength(JSON.stringify(payload)) }
+    );
+
+    httpStatus = res.status;
+    recordHeartbeat({ success: true });
+    return { ok: true, status: httpStatus };
+
+  } catch (e) {
+    // axios throws on non-2xx AND on network errors — distinguish them
+    httpStatus = e.response?.status ?? null;
+    const reason = httpStatus ? `HTTP ${httpStatus}` : (e.code ?? e.message);
+    console.error(`[agent] POST failed: ${reason}`);
+    recordHeartbeat({ success: false });
+    return { ok: false, status: httpStatus, reason };
+  }
+}
+
+
+// ─── console summary ──────────────────────────────────────────────────────────
+
+function printSummary(v, hw, seq, bytes, payload) {
+  const row = (label, val) =>
+    val != null ? console.log(`  ${label.padEnd(11)}: ${val}`) : undefined;
+  const yn = (b) => b == null ? "?" : b ? "✅" : "❌";
+
+  console.log(`\n╔══ #${seq} ══ ${LOCKER_CODE} ══ ${new Date().toLocaleString()} ══ ${bytes}B ══╗`);
+
+  if (v?.os) {
+    row("Device",    `${v.os.manufacturer ?? ""} ${v.os.deviceModel ?? ""} Android ${v.os.androidVersion ?? "?"}`);
+    row("Uptime",    `sys ${Math.round((v.os.systemUptimeSeconds  ?? 0) / 60)}m  node ${Math.round((v.os.processUptimeSeconds ?? 0) / 60)}m`);
+  }
+
+  // Location — always shown prominently; it's the locker's identity on the map
+  const loc = payload?.location ?? getLocation();
+  if (loc?.available) {
+    const age     = loc.fixAgeHours != null ? `${loc.fixAgeHours}h old` : "";
+    const acqFlag = loc.acquiring ? "  🔄 GPS acquiring..." : "";
+    row("Location",  `${loc.lat}, ${loc.lng}  ±${loc.accuracyM}m  [${loc.provider}]  ${age}${acqFlag}`);
+    row("Maps",      loc.mapsUrl);
+  } else {
+    row("Location",  `⚠️  ${loc?.reason ?? "unavailable"}`);
+  }
+
+  const m = v?.memory?.system;
+  if (m)      row("RAM",        `${m.usedMB}/${m.totalMB} MB  avail ${m.availableMB} MB  (${m.usedPct}%)`);
+  if (v?.cpu) row("CPU",        `${v.cpu.loadPct ?? "?"}%  LA ${v.cpu.loadAvg?.["1m"] ?? "?"} / ${v.cpu.loadAvg?.["5m"] ?? "?"} / ${v.cpu.loadAvg?.["15m"] ?? "?"}  ${v.cpu.cores ?? "?"} cores`);
+
+  if (v?.storage?.length) {
+    for (const s of v.storage) {
+      if ((s.usedPct ?? 0) > 80) console.log(`  ⚠️  Storage ${s.mount}: ${s.usedPct}% full`);
+    }
+    row("Storage",   v.storage.map(s => `${s.mount} ${s.usedGB}/${s.totalGB}GB`).join("  "));
+  }
+
+  // Battery — the two most critical fields are surfaced first
+  if (v?.battery?.available !== false) {
+    const b = v.battery;
+    const tempFlag = (b?.temperatureC ?? 0) > 40 ? " ⚠️ HOT" : "";
+    const levelFlag = (b?.percent ?? 100) < 15 ? " ⚠️ LOW" : "";
+    row("Battery",   `${b?.percent ?? "?"}%${levelFlag}  ${b?.temperatureC ?? "?"}°C${tempFlag}  ${b?.status ?? "?"}  [${b?.health ?? "?"}]  ${b?.currentMa ?? "?"}mA via ${b?.plugged ?? "?"}`);
+  } else {
+    row("Battery",   "⚠️  unavailable — check Termux:API is installed from F-Droid");
+  }
+
+  const conn = v?.network?.connectivity;
+  if (conn) {
+    row("Internet",  `${yn(conn.internetReachable)}  tcp ${conn.tcpLatencyMs ?? "?"}ms  ping ${conn.ping?.latencyAvgMs ?? "?"}ms  loss ${conn.ping?.packetLossPct ?? "?"}%  ext ${conn.publicIP ?? "?"}`);
+  }
+  if (v?.network?.wifi?.available !== false) {
+    const w = v.network.wifi;
+    row("WiFi",      `${w?.ssid ?? "(Location denied?)"}  ${w?.rssiDbm ?? "?"}dBm  ${w?.signalStrength ?? "?"}  ${w?.linkSpeedMbps ?? "?"}Mbps`);
+  }
+
+  if (v?.process) {
+    if (v.process.eventLoopLagMs > 50) console.log(`  ⚠️  Event-loop lag: ${v.process.eventLoopLagMs}ms`);
+    row("Node proc",  `heap ${v.process.heapUsedMB}MB / ${v.process.heapTotalMB}MB  rss ${v.process.rssMB}MB  lag ${v.process.eventLoopLagMs}ms  handles ${v.process.activeHandles}`);
+  }
+
+  if (hw) {
+    console.log("  ── Hardware ──────────────────────────────────────────");
+    if (hw.bu)      row("BU",        `${yn(hw.bu.reachable)}  tcp ${hw.bu.tcpLatencyMs ?? "?"}ms  http ${hw.bu.http?.statusCode ?? "n/a"}`);
+    if (hw.cameras) {
+      const cs = hw.cameras.summary;
+      row("IP cams",   `${cs.online}/${cs.total} online  ${cs.degraded} degraded  ${cs.offline} offline`);
+      hw.cameras.cameras.filter(c => c.health !== "online")
+        .forEach(c => console.log(`    ⚠️  ${c.label} (${c.host}) — ${c.health}`));
+    }
+    if (hw.gateway)  row("Gateway",   `${yn(hw.gateway.reachable)}  ${hw.gateway.latencyMs ?? "?"}ms`);
+    if (hw.usb)      row("USB serial", `${hw.usb.adapterCount} adapter(s)  [${hw.usb.serialPathsPresent.join(", ") || "none"}]`);
+
+    if (hw.operational) {
+      const icon = { healthy: "🟢", degraded: "🟡", critical: "🔴" }[hw.operational.state] ?? "⚪";
+      row("Op state",  `${icon} ${hw.operational.state.toUpperCase()}`);
+      for (const issue of hw.operational.issues ?? []) {
+        console.log(`    [${issue.severity}] ${issue.component}: ${issue.msg}`);
+      }
+    }
+
+    const comps = hw.bu?.boardStatus?.compartments ?? [];
+    const faults = comps.filter(c => c.status === "fault");
+    const open   = comps.filter(c => c.status === "unlocked");
+    if (faults.length) console.log(`    🔴 Faulted: ${faults.map(c => c.id).join(", ")}`);
+    if (open.length)   console.log(`    🔓 Open:    ${open.map(c => c.id).join(", ")}`);
+  }
+
+  // Profiler summary — most relevant per-tag stats at a glance
+  // This is always printed so you can see timing trends across beats.
+  console.log("  ── Timing stats ──────────────────────────────────────");
+  const stats = profiler.stats();
+  const tags  = Object.keys(stats).sort();
+  for (const tag of tags) {
+    const s = stats[tag];
+    if (!s || s.count === 0) continue;
+    const anomalyStr = s.anomalies > 0 ? `  ⚠️  ${s.anomalies} slow` : "";
+    console.log(`  ${tag.padEnd(24)}: avg ${s.avgMs}ms  p95 ${s.p95Ms}ms  p99 ${s.p99Ms}ms  n=${s.count}${anomalyStr}`);
+  }
+
+  // Pending async spans — anything stuck open for too long
+  const pending = profiler.pendingAsync();
+  if (pending.length > 0) {
+    console.log("  ── Pending async (possible hangs) ────────────────────");
+    for (const p of pending) {
+      const flag = p.pendingMs > 5000 ? "⚠️ " : "   ";
+      console.log(`  ${flag}${p.tag} — open ${p.pendingMs}ms`, p.meta);
+    }
+  }
+
+  const rel = v?.reliability;
+  if (rel) row("Beats",      `${rel.sent} ok / ${rel.failed} failed  (${rel.successRatePct ?? "?"}%)`);
+
+  console.log(`╚${"═".repeat(60)}╝\n`);
+}
+
+
+// ─── heartbeat ────────────────────────────────────────────────────────────────
+
+let running  = false;
+let sequence = 0;
+
+async function heartbeat() {
+  if (running) {
+    console.warn(`[agent] Beat #${sequence + 1} skipped — previous still running`);
+    return;
+  }
+  running = true;
+
+  // Time the entire heartbeat cycle
+  const beatSpan = profiler.start("heartbeat.total", { seq: sequence + 1 });
+
+  try {
+    sequence++;
+    const probeHW = sequence % HW_PROBE_EVERY === 0;
+
+    // vitals.collect and hardware.probe run in parallel.
+    // Both are individually timed inside their modules.
+    const [vitals, hw] = await Promise.all([
+      profiler.trace("vitals.collect", () => getVitals())
+        .catch(e => { console.error("[agent] getVitals:", e.message); return {}; }),
+
+      probeHW
+        ? profiler.trace("hardware.probe", () => getHardwareVitals())
+            .catch(e => { console.error("[agent] getHardwareVitals:", e.message); return null; })
+        : Promise.resolve(null),
+    ]);
+
+    // Memory snapshot after collection — shows cumulative heap at this point
+    profiler.memSnapshot(`beat.${sequence}.afterCollect`);
+
+    const payload = {
+      lockerCode:   LOCKER_CODE,
+      sequence,
+      deviceTime:   new Date().toISOString(),
+      agentVersion: AGENT_VERSION,
+      location:     getLocation(),   // lat/lng always included; reads from cache
+      vitals,
+      hardware:     hw,
+    };
+
+    const payloadStr   = JSON.stringify(payload);
+    const payloadBytes = Buffer.byteLength(payloadStr, "utf8");
+
+    if (payloadBytes > 10_000) {
+      console.warn(`[agent] ⚠️  Payload ${payloadBytes}B — larger than expected`);
+    }
+
+    printSummary(vitals, hw, sequence, payloadBytes, payload);
+
+    // post() is itself profiled inside (traces "post.cloud")
+    const result = await post(payload);
+    console.log(`[agent] Beat #${sequence}: ${result.ok ? `✅ ${result.status}` : `❌ ${result.reason ?? "err"}`}  (${payloadBytes}B)`);
+
+    // Flush profiler log periodically for offline analysis
+    if (sequence % PROFILE_FLUSH_EVERY === 0) {
+      profiler.flush();
+      console.log(`[agent] Profile log flushed → ${require("./profiler").CONFIG.LOG_FILE}`);
+    }
+
+  } catch (e) {
+    console.error("[agent] ❌ Beat error:", e.message);
+  } finally {
+    profiler.end(beatSpan);
+    running = false;
+  }
+}
+
+
+// ─── start ────────────────────────────────────────────────────────────────────
+
+// Example: how to use the profiler for your own application code
+// anywhere in the codebase — not just in server.js.
+//
+// Synchronous block:
+//   const s = profiler.start('kerong.parseLockCommand');
+//   const result = parseLockCommand(rawBytes);
+//   profiler.end(s);
+//
+// Async function (cleanest):
+//   const locks = await profiler.trace('bu.fetchStatus', () => fetchBUStatus(buIp));
+//
+// Async manual (when open and close are in different callbacks):
+//   const id = profiler.startAsync('camera.connect', { host: cam.host });
+//   socket.on('connect', () => profiler.endAsync(id, { success: true }));
+//   socket.on('error',   () => profiler.endAsync(id, { success: false, error: 'refused' }));
+//
+// Get timing report at any time:
+//   console.log(profiler.stats());              // all tags
+//   console.log(profiler.stats('post.cloud'));   // one tag
+//   console.log(profiler.pendingAsync());        // detect hangs
 
 heartbeat();
 setInterval(heartbeat, HEARTBEAT_INTERVAL);
+
+// Keep agent alive — no silent crash on Android without a supervisor
+process.on("unhandledRejection", r => console.error("[agent] unhandledRejection:", r));
+process.on("uncaughtException",  e => console.error("[agent] uncaughtException:", e.message));
+
+// Flush profiler on clean shutdown
+process.on("SIGINT",  () => { profiler.flush(); process.exit(0); });
+process.on("SIGTERM", () => { profiler.flush(); process.exit(0); });
 
 
 // =============================================

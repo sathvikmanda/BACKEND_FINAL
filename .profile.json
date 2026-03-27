@@ -1,0 +1,322 @@
+{
+  "flushedAt": "2026-03-27T13:59:19.628Z",
+  "pendingAsync": [],
+  "stats": {
+    "vitals.memory": {
+      "count": 1,
+      "anomalies": 0,
+      "avgMs": 320.75,
+      "minMs": 320.75,
+      "maxMs": 320.75,
+      "p50Ms": 320.75,
+      "p95Ms": 320.75,
+      "p99Ms": 320.75
+    },
+    "vitals.cpu": {
+      "count": 1,
+      "anomalies": 0,
+      "avgMs": 332.835,
+      "minMs": 332.835,
+      "maxMs": 332.835,
+      "p50Ms": 332.835,
+      "p95Ms": 332.835,
+      "p99Ms": 332.835
+    },
+    "vitals.process": {
+      "count": 1,
+      "anomalies": 0,
+      "avgMs": 34.509,
+      "minMs": 34.509,
+      "maxMs": 34.509,
+      "p50Ms": 34.509,
+      "p95Ms": 34.509,
+      "p99Ms": 34.509
+    },
+    "vitals.telephony": {
+      "count": 1,
+      "anomalies": 0,
+      "avgMs": 163.908,
+      "minMs": 163.908,
+      "maxMs": 163.908,
+      "p50Ms": 163.908,
+      "p95Ms": 163.908,
+      "p99Ms": 163.908
+    },
+    "vitals.storage": {
+      "count": 1,
+      "anomalies": 0,
+      "avgMs": 368.417,
+      "minMs": 368.417,
+      "maxMs": 368.417,
+      "p50Ms": 368.417,
+      "p95Ms": 368.417,
+      "p99Ms": 368.417
+    },
+    "vitals.battery": {
+      "count": 1,
+      "anomalies": 0,
+      "avgMs": 346.118,
+      "minMs": 346.118,
+      "maxMs": 346.118,
+      "p50Ms": 346.118,
+      "p95Ms": 346.118,
+      "p99Ms": 346.118
+    },
+    "vitals.sensors": {
+      "count": 1,
+      "anomalies": 0,
+      "avgMs": 163.671,
+      "minMs": 163.671,
+      "maxMs": 163.671,
+      "p50Ms": 163.671,
+      "p95Ms": 163.671,
+      "p99Ms": 163.671
+    },
+    "vitals.cameras": {
+      "count": 1,
+      "anomalies": 0,
+      "avgMs": 134.06,
+      "minMs": 134.06,
+      "maxMs": 134.06,
+      "p50Ms": 134.06,
+      "p95Ms": 134.06,
+      "p99Ms": 134.06
+    },
+    "vitals.os": {
+      "count": 1,
+      "anomalies": 0,
+      "avgMs": 764.458,
+      "minMs": 764.458,
+      "maxMs": 764.458,
+      "p50Ms": 764.458,
+      "p95Ms": 764.458,
+      "p99Ms": 764.458
+    },
+    "vitals.network": {
+      "count": 1,
+      "anomalies": 0,
+      "avgMs": 835.982,
+      "minMs": 835.982,
+      "maxMs": 835.982,
+      "p50Ms": 835.982,
+      "p95Ms": 835.982,
+      "p99Ms": 835.982
+    },
+    "vitals.collect": {
+      "count": 1,
+      "anomalies": 0,
+      "avgMs": 1043.282,
+      "minMs": 1043.282,
+      "maxMs": 1043.282,
+      "p50Ms": 1043.282,
+      "p95Ms": 1043.282,
+      "p99Ms": 1043.282
+    },
+    "post.cloud": {
+      "count": 1,
+      "anomalies": 0,
+      "avgMs": 458.007,
+      "minMs": 458.007,
+      "maxMs": 458.007,
+      "p50Ms": 458.007,
+      "p95Ms": 458.007,
+      "p99Ms": 458.007
+    },
+    "heartbeat.total": {
+      "count": 1,
+      "anomalies": 0,
+      "avgMs": 1529.061,
+      "minMs": 1529.061,
+      "maxMs": 1529.061,
+      "p50Ms": 1529.061,
+      "p95Ms": 1529.061,
+      "p99Ms": 1529.061
+    }
+  },
+  "recent": [
+    {
+      "type": "sync",
+      "tag": "vitals.memory",
+      "durationMs": 320.75,
+      "durationUs": 320750.4,
+      "anomaly": false,
+      "mem": {
+        "heapDeltaMB": 1.598,
+        "heapUsedMB": 95.38,
+        "rssMB": 196.5
+      },
+      "at": "2026-03-27T13:59:17.364Z",
+      "success": true
+    },
+    {
+      "type": "sync",
+      "tag": "vitals.cpu",
+      "durationMs": 332.835,
+      "durationUs": 332834.9,
+      "anomaly": false,
+      "mem": {
+        "heapDeltaMB": 2.015,
+        "heapUsedMB": 95.81,
+        "rssMB": 196.78
+      },
+      "at": "2026-03-27T13:59:17.376Z",
+      "success": true
+    },
+    {
+      "type": "sync",
+      "tag": "vitals.process",
+      "durationMs": 34.509,
+      "durationUs": 34508.5,
+      "anomaly": false,
+      "mem": {
+        "heapDeltaMB": 0.448,
+        "heapUsedMB": 95.74,
+        "rssMB": 196.93
+      },
+      "at": "2026-03-27T13:59:17.392Z",
+      "success": true
+    },
+    {
+      "type": "sync",
+      "tag": "vitals.telephony",
+      "durationMs": 163.908,
+      "durationUs": 163907.5,
+      "anomaly": false,
+      "mem": {
+        "heapDeltaMB": 1.18,
+        "heapUsedMB": 95.89,
+        "rssMB": 196.93
+      },
+      "at": "2026-03-27T13:59:17.412Z",
+      "success": true
+    },
+    {
+      "type": "sync",
+      "tag": "vitals.storage",
+      "durationMs": 368.417,
+      "durationUs": 368417.4,
+      "anomaly": false,
+      "mem": {
+        "heapDeltaMB": 2.104,
+        "heapUsedMB": 95.9,
+        "rssMB": 196.93
+      },
+      "at": "2026-03-27T13:59:17.412Z",
+      "success": true
+    },
+    {
+      "type": "sync",
+      "tag": "vitals.battery",
+      "durationMs": 346.118,
+      "durationUs": 346118.1,
+      "anomaly": false,
+      "mem": {
+        "heapDeltaMB": 1.936,
+        "heapUsedMB": 95.91,
+        "rssMB": 196.93
+      },
+      "at": "2026-03-27T13:59:17.412Z",
+      "success": true
+    },
+    {
+      "type": "sync",
+      "tag": "vitals.sensors",
+      "durationMs": 163.671,
+      "durationUs": 163670.6,
+      "anomaly": false,
+      "mem": {
+        "heapDeltaMB": 1.254,
+        "heapUsedMB": 96.26,
+        "rssMB": 197.26
+      },
+      "at": "2026-03-27T13:59:17.467Z",
+      "success": true
+    },
+    {
+      "type": "sync",
+      "tag": "vitals.cameras",
+      "durationMs": 134.06,
+      "durationUs": 134060,
+      "anomaly": false,
+      "mem": {
+        "heapDeltaMB": 0.881,
+        "heapUsedMB": 96.26,
+        "rssMB": 197.26
+      },
+      "at": "2026-03-27T13:59:17.467Z",
+      "success": true
+    },
+    {
+      "type": "sync",
+      "tag": "vitals.os",
+      "durationMs": 764.458,
+      "durationUs": 764458.4,
+      "anomaly": false,
+      "mem": {
+        "heapDeltaMB": 3.711,
+        "heapUsedMB": 96.45,
+        "rssMB": 201.91
+      },
+      "at": "2026-03-27T13:59:17.649Z",
+      "success": true
+    },
+    {
+      "type": "sync",
+      "tag": "vitals.network",
+      "durationMs": 835.982,
+      "durationUs": 835982,
+      "anomaly": false,
+      "mem": {
+        "heapDeltaMB": 3.123,
+        "heapUsedMB": 97.24,
+        "rssMB": 202.59
+      },
+      "at": "2026-03-27T13:59:17.926Z",
+      "success": true
+    },
+    {
+      "type": "sync",
+      "tag": "vitals.collect",
+      "durationMs": 1043.282,
+      "durationUs": 1043282.2,
+      "anomaly": false,
+      "mem": {
+        "heapDeltaMB": 4.514,
+        "heapUsedMB": 97.25,
+        "rssMB": 202.59
+      },
+      "at": "2026-03-27T13:59:17.928Z",
+      "success": true
+    },
+    {
+      "type": "sync",
+      "tag": "post.cloud",
+      "durationMs": 458.007,
+      "durationUs": 458006.6,
+      "anomaly": false,
+      "mem": {
+        "heapDeltaMB": 1.815,
+        "heapUsedMB": 99.3,
+        "rssMB": 204.06
+      },
+      "at": "2026-03-27T13:59:18.404Z",
+      "url": "https://admin.droppoint.in/api/locker-heartbeat",
+      "payloadBytes": 1490,
+      "success": true
+    },
+    {
+      "type": "sync",
+      "tag": "heartbeat.total",
+      "durationMs": 1529.061,
+      "durationUs": 1529061.1,
+      "anomaly": false,
+      "mem": {
+        "heapDeltaMB": 6.58,
+        "heapUsedMB": 99.31,
+        "rssMB": 204.08
+      },
+      "at": "2026-03-27T13:59:18.413Z",
+      "seq": 1
+    }
+  ]
+}
