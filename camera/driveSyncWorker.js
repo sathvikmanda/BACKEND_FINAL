@@ -2,8 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const RecordingSession = require("../models/RecordingSession");
 const { uploadComplaintFolder, uploadSingleFileToDrive } = require("./googleDriveUploader");
-const { compressVideo } = require("./videoCompressor");
-const { appendCompressionStats, appendTimeline } = require("./timelineWriter");
+const { appendTimeline } = require("./timelineWriter");
 
 // 🔒 Prevent two syncs running simultaneously
 let syncInProgress = false;
@@ -38,18 +37,7 @@ async function runDriveSync(baseDir, lockerId) {
       }
 
       try {
-        // ── Compress all raw MP4s ──
-        const files = fs.readdirSync(localDir).filter(f => f.endsWith(".mp4"));
-
-        for (const file of files) {
-          if (file.includes("_compressed")) continue;
-          const fullPath = path.join(localDir, file);
-          const compressedPath = await compressVideo(fullPath);
-          appendCompressionStats(recordingsBase, helpId, fullPath, compressedPath);
-          fs.unlinkSync(fullPath);
-        }
-
-        // ── Upload ──
+        // ── Upload raw MP4s directly (no local compression) ──
         appendTimeline(recordingsBase, helpId, "CLOUD UPLOAD STARTED");
         await uploadComplaintFolder(baseDir, lockerId, helpId);
         appendTimeline(recordingsBase, helpId, "CLOUD UPLOAD SUCCESSFUL");

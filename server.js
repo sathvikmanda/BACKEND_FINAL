@@ -39,7 +39,6 @@ const twilio = require("twilio");
 const { runDriveSync } = require("./camera/driveSyncWorker");
 const { checkStorageAndSync, cleanOrphanedFolders } = require("./camera/storageMonitor");
 const { appendTimeline } = require("./camera/timelineWriter");
-const { generateClipsForSession } = require("./camera/multiClipProcessor");
 const BASE_DIR = path.join(__dirname, "recordings");
 const session = require("express-session");
 const CAMERAS = [
@@ -407,12 +406,11 @@ app.post("/api/complaint/resolve", async (req, res) => {
     // Wait for FFmpeg to flush file to disk
     await new Promise(r => setTimeout(r, 2000));
 
-    const clips = await generateClipsForSession(helpId, BASE_DIR);
-
+    // On-device clip generation has been removed; cloud may process raw video later.
     appendTimeline(BASE_DIR, helpId, "COMPLAINT RESOLVED");
 
     // ✅ Respond immediately — don't make Flutter wait for upload
-    res.json({ success: true, clips });
+    res.json({ success: true, clips: [] });
 
     // ✅ Upload in background after response sent
     setImmediate(async () => {

@@ -8,7 +8,6 @@ const RecordingSession = require("../models/RecordingSession");
 const HelpRequest = require("../models/helpRequest");
 
 const { deactivateRecording } = require("./recordingSessionManager");
-const { generateClipsForSession } = require("./multiClipProcessor");
 const { EVENT_AUTO_RESOLVE_MS } = require("./autoResolveRules");
 const { appendTimeline } = require("./timelineWriter");
 
@@ -107,11 +106,11 @@ async function autoResolveComplaint(helpId, baseDir) {
     return;
   }
 
-  const clips = await generateClipsForSession(helpId, baseDir);
-  complaint.clips = clips;
+  // No on-device clip creation: retain raw recording path for later cloud handling.
+  complaint.clips = [];
   await complaint.save();
 
-  console.log(`✂️ Clips generated for ${helpId}: ${clips.length}`);
+  console.log(`ℹ️ Auto-resolve completed for ${helpId} (raw recording preserved)`);
 }
 
 /* ---------------- SCHEDULER ---------------- */

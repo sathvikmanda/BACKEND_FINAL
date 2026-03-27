@@ -17,25 +17,15 @@ export function recordClip({ rtspUrl, baseDir, helpId, type }) {
     "-rtsp_transport", "tcp",
     "-i", rtspUrl,
 
-    // 🎥 video
-    "-map", "0:v:0",
-    "-c:v", "libx264",
-    "-preset", "veryfast",
-
-    // 🔊 audio
-    "-map", "0:a?",
-    "-c:a", "aac",
-    "-ar", "44100",
-    "-ac", "1",
+    // ✅ NO encoding — just remux the stream
+    "-c", "copy",
 
     "-t", "10",
     "-movflags", "+faststart",
     outputPath
-  ],{
-    stdio: ["pipe", "ignore", "pipe"]  
-  }
-
-  );
+  ], {
+    stdio: ["pipe", "ignore", "pipe"]
+  });
 
   return new Promise(resolve => {
     p.on("close", () => resolve(filename));
