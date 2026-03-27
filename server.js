@@ -1149,17 +1149,17 @@ app.post("/terminal/payment/drop-verify", async (req, res) => {
     parcel.compartmentId = compartment.compartmentId;
     await parcel.save();
 
-    await client.messages.create({
-      to: `whatsapp:+91${parcel.receiverPhone}`,
-      from: "whatsapp:+15558076515",
-      contentSid: "HX4200777a18b1135e502d60b796efe670",
-      contentVariables: JSON.stringify({
-        1: parcel.receiverName,
-        2: parcel.senderName,
-        3: `mobile/incoming/${parcel.customId}/qr`,
-        4: `dir/?api=1&destination=${parcel.lockerLat},${parcel.lockerLng}`,
-      }),
-    });
+   await client.messages.create({
+            to: `whatsapp:+91${parcel.receiverPhone}`,
+            from: "whatsapp:+15558076515",
+            contentSid: "HX7e2cecaedcafdf5ce9b8ceaec696d8a1",
+            contentVariables: JSON.stringify({
+              1: parcel.senderPhone,
+              2: parcel.receiverPhone,
+              3: `mobile/incoming/${parcel.customId}/qr`,
+
+            }),
+          });
 
     const smsText1 = `Your Drop Point Locker Access Code is ${parcel.accessCode}. Please don't share this with anyone. -DROPPOINT`;
     sendSMS(`91${parcel.senderPhone}`, smsText1);
@@ -1253,7 +1253,6 @@ app.post("/terminal/authdropoff", async (req, res) => {
       lockerId: lockerID,
       hours: hrs,
       terminal_store: true,
-
       accessCode: Math.floor(100000 + Math.random() * 900000).toString(),
       customId,
       cost: total,
@@ -1825,11 +1824,16 @@ app.post("/personal/dropoff", async (req, res) => {
         // ----------- NOTIFICATIONS -----------
 
         if (parcel.store_self) {
-          await client.messages.create({
-            to: `whatsapp:+91${parcel.senderPhone}`,
+        await client.messages.create({
+            to: `whatsapp:+91${parcel.receiverPhone}`,
             from: "whatsapp:+15558076515",
-            contentSid: "HXa7a69894f9567b90c1cacab6827ff46c",
+            contentSid: "HX7e2cecaedcafdf5ce9b8ceaec696d8a1",
+            contentVariables: JSON.stringify({
+              1: parcel.senderPhone,
+              2: parcel.receiverPhone,
+              3: `mobile/incoming/${parcel.customId}/qr`,
 
+            }),
           });
 
           const smsText2 = `Item successfully dropped at Locker ${locker.lockerId
