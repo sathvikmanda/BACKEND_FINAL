@@ -1647,9 +1647,11 @@ app.post("/personal/dropoff", async (req, res) => {
     if (!Number.isInteger(hrs) || hrs < 1) {
       return res.status(400).json({ error: "Invalid hours" });
     }
+
     const ratePerHour = RATE_BY_SIZE[size];
     const calculatedAmount = ratePerHour * hrs;
     console.log(calculatedAmount);
+
     if (!helpId) {
       return res.status(400).json({ error: "Missing helpId" });
     }
@@ -1662,38 +1664,24 @@ app.post("/personal/dropoff", async (req, res) => {
     if (!locker) {
       return res.status(500).json({ error: "Locker not found" });
     }
-    console.log("Locker exists, checking compartments...");
-
 
     const compartment = locker.compartments.find(
       (c) => c.size === size && !c.isBooked
     );
-    console.log("Compartment found:", compartment ? compartment.compartmentId : "NONE");
-    console.log("Incoming size:", size);
-    console.log(
-      "Available compartments:",
-      locker.compartments.map(c => ({
-        id: c.compartmentId,
-        size: c.size,
-        isBooked: c.isBooked
-      }))
-    );
 
+    console.log("Compartment found:", compartment ? compartment.compartmentId : "NONE");
 
     if (!compartment) {
-      return res.status(409).json({
-        error: "No free compartment",
-      });
+      return res.status(409).json({ error: "No free compartment" });
     }
-    console.log("Compartment available, proceeding to unlock...");
 
+    console.log("Compartment available, proceeding to unlock...");
 
     // ================= UNLOCK HARDWARE =================
 
     console.log("⚡ About to call unlockCompartment");
 
     let hw;
-
     try {
       hw = await unlockCompartment({
         sendUnlock,
@@ -1703,14 +1691,8 @@ app.post("/personal/dropoff", async (req, res) => {
       console.log("🔓 Unlock returned:", hw);
     } catch (err) {
       console.error("❌ unlockCompartment threw error:", err);
-      return res.status(500).json({
-        success: false,
-        message: "Unlock crashed",
-      });
+      return res.status(500).json({ success: false, message: "Unlock crashed" });
     }
-
-
-    console.log("🔓 Unlock result:", hw);
 
     if (!hw || !hw.ok) {
       return res.status(504).json({
@@ -1720,148 +1702,101 @@ app.post("/personal/dropoff", async (req, res) => {
       });
     }
 
-    // ================= CREATE PARCEL =================
+    // ================= GENERATE IDs BEFORE RESPONDING =================
+
+    const accessCode = Math.floor(100000 + Math.random() * 900000).toString();
 
     let customId;
     while (true) {
-      customId =
-        "P" + Math.random().toString(36).slice(2, 7).toUpperCase();
+      customId = "P" + Math.random().toString(36).slice(2, 7).toUpperCase();
       const exists = await Parcel2.exists({ customId });
       if (!exists) break;
     }
 
-    const createdAt = new Date();
-    const expiresAt = new Date(createdAt.getTime() + hrs * 3600000);
-
-    const parcel = await Parcel2.create({
-      senderPhone: deliveryPhone,
-      receiverPhone: recipientPhone,
-      size,
-      cost: calculatedAmount,
-      lockerId: locker.lockerId,
-      hours: hrs,
-      terminal_store: true,
-      accessCode: Math.floor(100000 + Math.random() * 900000).toString(),
-      customId,
-      isDropoff: true,
-      createdAt,
-      expiresAt,
-      status: "awaiting_pick",
-      paymentStatus: "pending",
-      helpId: helpId,
-    });
-
-    await createChainOfCustody({
-      parcelId: parcel._id,
-      intent: "drop_for_someone",
-
-      // Owner = sender
-      ownerType: "user",
-      ownerPhone: deliveryPhone,
-
-      // Custody = locker
-      custodyType: "droppoint",
-      custodyLockerId: locker.lockerId,
-
-      initialActorType: "user",
-      initialActorIdentifier: deliveryPhone
-    });
-
-    await ChainOfCustody.findOneAndUpdate(
-      { parcelId: parcel._id },
-      {
-        $push: {
-          history: {
-            $each: [
-              {
-                actorType: "user",
-                actorIdentifier: deliveryPhone,
-                eventType: "dropped_by_sender"
-              },
-              {
-                actorType: "droppoint",
-                actorIdentifier: locker.lockerId,
-                eventType: "custody_transferred_to_locker"
-              }
-            ]
-          }
-        }
-      }
-    );
-
-
-
-
-
-    // ================= BOOK COMPARTMENT =================
-
+    // Book compartment immediately to prevent double-booking
     compartment.isBooked = true;
-    compartment.currentParcelId = parcel._id;
-
     await locker.save();
 
-    parcel.compartmentId = compartment.compartmentId;
-    parcel.UsercompartmentId = compartment.cname;
-    await parcel.save();
+    // ================= RESPOND TO FLUTTER IMMEDIATELY =================
 
-    console.log("✅ Unlock + Parcel created. Sending response to Flutter.");
-
-    // ================= SEND RESPONSE IMMEDIATELY =================
+    console.log("✅ Locker opened. Sending response to Flutter immediately.");
 
     res.json({
       success: true,
-      customId: parcel.customId,
-      accessCode: parcel.accessCode,
-      lockerId: parcel.lockerId,
-      compartmentId: parcel.compartmentId,
+      customId,
+      accessCode,
+      lockerId: locker.lockerId,
+      compartmentId: compartment.compartmentId,
     });
 
-    // ================= BACKGROUND TASKS =================
+    // ================= BACKGROUND: DB + NOTIFICATIONS =================
 
     setImmediate(async () => {
       try {
+        const createdAt = new Date();
+        const expiresAt = new Date(createdAt.getTime() + hrs * 3600000);
 
-        // ----------- NOTIFICATIONS -----------
+        const parcel = await Parcel2.create({
+          senderPhone: deliveryPhone,
+          receiverPhone: recipientPhone,
+          size,
+          cost: calculatedAmount,
+          lockerId: locker.lockerId,
+          compartmentId: compartment.compartmentId,
+          hours: hrs,
+          terminal_store: true,
+          accessCode,
+          customId,
+          isDropoff: true,
+          createdAt,
+          expiresAt,
+          status: "awaiting_pick",
+          paymentStatus: "pending",
+          helpId,
+        });
 
-        if (parcel.store_self) {
-        await client.messages.create({
-            to: `whatsapp:+91${parcel.receiverPhone}`,
-            from: "whatsapp:+15558076515",
-            contentSid: "HX7e2cecaedcafdf5ce9b8ceaec696d8a1",
-            contentVariables: JSON.stringify({
-              1: parcel.senderPhone,
-              2: parcel.receiverPhone,
-              3: `mobile/incoming/${parcel.customId}/qr`,
+        await createChainOfCustody({
+          parcelId: parcel._id,
+          intent: "drop_for_someone",
+          ownerType: "user",
+          ownerPhone: deliveryPhone,
+          custodyType: "droppoint",
+          custodyLockerId: locker.lockerId,
+          initialActorType: "user",
+          initialActorIdentifier: deliveryPhone,
+        });
 
-            }),
-          });
+        await ChainOfCustody.findOneAndUpdate(
+          { parcelId: parcel._id },
+          {
+            $push: {
+              history: {
+                $each: [
+                  {
+                    actorType: "user",
+                    actorIdentifier: deliveryPhone,
+                    eventType: "dropped_by_sender",
+                  },
+                  {
+                    actorType: "droppoint",
+                    actorIdentifier: locker.lockerId,
+                    eventType: "custody_transferred_to_locker",
+                  },
+                ],
+              },
+            },
+          }
+        );
 
-          const smsText2 = `Item successfully dropped at Locker ${locker.lockerId
-            }. Pickup code: ${parcel.accessCode
-            }. Share this securely. Receiver can also access via https://demo.droppoint.in/${parcel.customId}/qr - DROPPOINT`;
+        compartment.currentParcelId = parcel._id;
+        await locker.save();
 
-          console.log(await sendSMS(`91${parcel.senderPhone}`, smsText2));
+        console.log("✅ Parcel created in background:", parcel.customId);
 
-        } else {
+        // ----------- SMS -----------
 
-          await client.messages.create({
-            to: `whatsapp:+91${parcel.receiverPhone}`,
-            from: "whatsapp:+15558076515",
-            contentSid: "HX7e2cecaedcafdf5ce9b8ceaec696d8a1",
-            contentVariables: JSON.stringify({
-              1: parcel.senderPhone,
-              2: parcel.receiverPhone,
-              3: `mobile/incoming/${parcel.customId}/qr`,
-
-            }),
-          });
-        }
-
-        const smsText3 = `Item successfully dropped at Locker ${locker.lockerId
-          }. Pickup code: ${parcel.accessCode
-          }. Share this securely. Receiver can also access via https://demo.droppoint.in/qr?parcelid=${parcel.customId} - DROPPOINT`;
-
-        console.log(await sendSMS(`91${parcel.senderPhone}`, smsText3));
+        const smsText = `Item successfully dropped at Locker ${locker.lockerId}. Pickup code: ${accessCode}. Share this securely. Receiver can also access via https://demo.droppoint.in/qr?parcelid=${customId} - DROPPOINT`;
+        console.log(await sendSMS(`91${deliveryPhone}`, smsText));
 
         // ----------- LOCK CLOSE VERIFICATION -----------
 
@@ -1872,9 +1807,7 @@ app.post("/personal/dropoff", async (req, res) => {
           1000
         )
           .then((result) => {
-            if (!result) {
-              console.warn("⚠️ Locker did not close in time");
-            }
+            if (!result) console.warn("⚠️ Locker did not close in time");
           })
           .catch((err) => {
             console.error("Verify loop crashed:", err);
@@ -1887,12 +1820,8 @@ app.post("/personal/dropoff", async (req, res) => {
 
   } catch (err) {
     console.error("❌ personal dropoff error:", err);
-
     if (!res.headersSent) {
-      return res.status(500).json({
-        success: false,
-        error: "Server error",
-      });
+      return res.status(500).json({ success: false, error: "Server error" });
     }
   }
 });
