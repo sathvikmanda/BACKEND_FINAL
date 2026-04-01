@@ -6,7 +6,10 @@ const recordingSessionSchema = new mongoose.Schema({
     required: true, 
     index: true 
   },
-
+  driveFileId:   { type: String },
+  embedUrl:      { type: String },
+  viewUrl:       { type: String },
+  uploadedAt:    { type: Date },
   cameraId: { 
     type: String, 
     required: true,

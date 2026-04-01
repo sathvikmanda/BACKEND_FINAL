@@ -428,22 +428,50 @@ app.post("/api/complaint/resolve", async (req, res) => {
     const { helpId } = req.body;
 
     await stopAllRecordingsForSession(helpId);
-
-    // Wait for FFmpeg to flush file to disk
     await new Promise(r => setTimeout(r, 2000));
 
-    // On-device clip generation has been removed; cloud may process raw video later.
     appendTimeline(BASE_DIR, helpId, "COMPLAINT RESOLVED");
-
-    // ✅ Respond immediately — don't make Flutter wait for upload
     res.json({ success: true, clips: [] });
 
-    // ✅ Upload in background after response sent
     setImmediate(async () => {
       try {
-        await runDriveSync(BASE_DIR, "L01");
+        // Get all recording sessions for this complaint
+        const sessions = await RecordingSession.find({ sessionId: helpId });
+
+        for (const session of sessions) {
+          try {
+            const rawFile = session.rawVideoFile;
+
+            if (!fs.existsSync(rawFile)) {
+              console.log(`[UPLOAD] File missing: ${rawFile}`);
+              appendTimeline(BASE_DIR, helpId, `WARNING: File missing for ${session.cameraId}`);
+              continue;
+            }
+
+            appendTimeline(BASE_DIR, helpId, `UPLOADING: ${session.cameraId}`);
+
+            // Upload + set public + save embedUrl to MongoDB
+            await uploadVideoAndSaveEmbed(rawFile, "L01", helpId, session.cameraId);
+
+            appendTimeline(BASE_DIR, helpId, `UPLOADED: ${session.cameraId}`);
+
+            // Delete local file to free storage
+            fs.unlinkSync(rawFile);
+
+            // Breathe between cameras
+            await new Promise(r => setTimeout(r, 1000));
+
+          } catch (err) {
+            console.error(`[UPLOAD] Failed for ${session.cameraId}:`, err.message);
+            appendTimeline(BASE_DIR, helpId, `ERROR: Upload failed for ${session.cameraId} — ${err.message}`);
+          }
+        }
+
+        appendTimeline(BASE_DIR, helpId, "ALL UPLOADS COMPLETE");
+
       } catch (err) {
-        console.error("Drive sync failed after resolve:", err.message);
+        console.error("[RESOLVE PIPELINE]", err.message);
+        appendTimeline(BASE_DIR, helpId, `ERROR: Resolve pipeline — ${err.message}`);
       }
     });
 

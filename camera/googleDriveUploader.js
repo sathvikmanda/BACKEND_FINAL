@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const { google } = require("googleapis");
 const { appendCompressionStats, appendTimeline } = require("./timelineWriter");
+const RecordingSession = require("../models/RecordingSession");
 // ==============================
 // 🔐 AUTH
 // ==============================
@@ -146,5 +147,56 @@ async function uploadComplaintFolder(baseDir, lockerId, helpId) {
   console.log("✅ Complaint uploaded successfully:", helpId);
   appendTimeline(baseDir, helpId, "CLOUD UPLOADED SUCCESSFULLY");
 }
+async function uploadVideoAndSaveEmbed(filePath, lockerId, helpId, cameraId) {
+  const drive      = await getDrive();
+  const rootFolder = process.env.GDRIVE_ROOT_FOLDER;
 
-module.exports = { uploadComplaintFolder, uploadSingleFileToDrive };
+  const lockerFolderId    = await getOrCreateFolder(drive, lockerId, rootFolder);
+  const complaintFolderId = await getOrCreateFolder(drive, helpId, lockerFolderId);
+
+  const fileName = path.basename(filePath);
+
+  // Check if already uploaded
+  const existing = await drive.files.list({
+    q: `'${complaintFolderId}' in parents and name='${fileName}' and trashed=false`,
+    fields: "files(id)",
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true
+  });
+
+  let fileId;
+  if (existing.data.files.length > 0) {
+    fileId = existing.data.files[0].id;
+    console.log(`[DRIVE] Already exists — reusing: ${fileId}`);
+  } else {
+    const res = await drive.files.create({
+      requestBody: { name: fileName, parents: [complaintFolderId] },
+      media: { body: fs.createReadStream(filePath) },
+      supportsAllDrives: true,
+      fields: "id"
+    });
+    fileId = res.data.id;
+    console.log(`[DRIVE] Uploaded — fileId: ${fileId}`);
+  }
+
+  // Make publicly viewable — required for iframe embed
+  await drive.permissions.create({
+    fileId,
+    requestBody: { role: "reader", type: "anyone" },
+    supportsAllDrives: true
+  });
+
+  const embedUrl = `https://drive.google.com/file/d/${fileId}/preview`;
+  const viewUrl  = `https://drive.google.com/file/d/${fileId}/view`;
+
+  // Save to MongoDB so support portal can embed it
+  await RecordingSession.findOneAndUpdate(
+    { sessionId: helpId, cameraId },
+    { driveFileId: fileId, embedUrl, viewUrl, cloudUploaded: true, uploadedAt: new Date() }
+  );
+
+  console.log(`[DRIVE] embedUrl saved — ${helpId}/${cameraId}`);
+  return { fileId, embedUrl, viewUrl };
+}
+
+module.exports = { uploadComplaintFolder, uploadSingleFileToDrive, uploadVideoAndSaveEmbed };
