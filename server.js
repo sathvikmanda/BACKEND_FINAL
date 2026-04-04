@@ -135,7 +135,8 @@ app.post("/api/otp/send", async (req, res) => {
     });
 
     // 📩 Send SMS (STPL)
-    const OTPmsg = `Your Drop Point verification code is ${otp}. Do not share this OTP with anyone. Valid for ${5} minutes. - DROPPOINT`;
+   
+    const OTPmsg = `Your DROPPOINT verification code is: ${otp}`;
     sendSMS(phone, OTPmsg);
 
     console.log("✅ SMS OTP sent (STPL):", otp); // dev only
