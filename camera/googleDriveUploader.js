@@ -85,6 +85,32 @@ async function uploadFile(drive, filePath, parentId) {
 
   console.log("☁ Uploaded:", fileName);
 }
+
+async function updateRecordingAfterUpload(helpId, fileId) {
+  try {
+    const embedUrl = `https://drive.google.com/file/d/${fileId}/preview`;
+    const viewUrl = `https://drive.google.com/file/d/${fileId}/view`;
+
+    await RecordingSession.updateMany(
+      { sessionId: helpId },
+      {
+        $set: {
+          driveFileId: fileId,
+          embedUrl,
+          viewUrl,
+          cloudUploaded: true,
+          uploadedAt: new Date(),
+          status: "completed"
+        }
+      }
+    );
+
+    console.log("✅ Recording updated with video links");
+  } catch (err) {
+    console.error("❌ Upload update failed:", err);
+  }
+}
+
 async function uploadSingleFileToDrive(filePath, lockerId, helpId) {
 
   const drive = await getDrive();
@@ -190,13 +216,10 @@ async function uploadVideoAndSaveEmbed(filePath, lockerId, helpId, cameraId) {
   const viewUrl  = `https://drive.google.com/file/d/${fileId}/view`;
 
   // Save to MongoDB so support portal can embed it
-  await RecordingSession.findOneAndUpdate(
-    { sessionId: helpId, cameraId },
-    { driveFileId: fileId, embedUrl, viewUrl, cloudUploaded: true, uploadedAt: new Date() }
-  );
+  await updateRecordingAfterUpload(helpId, fileId);
 
   console.log(`[DRIVE] embedUrl saved — ${helpId}/${cameraId}`);
   return { fileId, embedUrl, viewUrl };
 }
 
-module.exports = { uploadComplaintFolder, uploadSingleFileToDrive, uploadVideoAndSaveEmbed };
+module.exports = { uploadComplaintFolder, uploadSingleFileToDrive, uploadVideoAndSaveEmbed, updateRecordingAfterUpload };
