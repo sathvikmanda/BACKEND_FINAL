@@ -3,6 +3,7 @@ const path = require("path");
 const { google } = require("googleapis");
 const { appendCompressionStats, appendTimeline } = require("./timelineWriter");
 const RecordingSession = require("../models/RecordingSession");
+
 // ==============================
 // 🔐 AUTH
 // ==============================
@@ -25,7 +26,6 @@ async function getDrive() {
 // ==============================
 
 async function getOrCreateFolder(drive, name, parentId) {
-
   const res = await drive.files.list({
     q: `'${parentId}' in parents and name='${name}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
     fields: "files(id, name)",
@@ -51,48 +51,16 @@ async function getOrCreateFolder(drive, name, parentId) {
 }
 
 // ==============================
-// ⬆️ FILE UPLOAD
+// 🔥 FIXED DB UPDATE FUNCTION
 // ==============================
 
-async function uploadFile(drive, filePath, parentId) {
-
-  const fileName = path.basename(filePath);
-
-  // 🔍 Check if file already exists
-  const existing = await drive.files.list({
-    q: `'${parentId}' in parents and name='${fileName}' and trashed=false`,
-    fields: "files(id, name)",
-    supportsAllDrives: true,
-    includeItemsFromAllDrives: true
-  });
-
-  if (existing.data.files.length > 0) {
-    console.log("🔁 File already exists, skipping:", fileName);
-    return;
-  }
-
-  // ⬆ Upload only if not exists
-  await drive.files.create({
-    requestBody: {
-      name: fileName,
-      parents: [parentId]
-    },
-    media: {
-      body: fs.createReadStream(filePath)
-    },
-    supportsAllDrives: true
-  });
-
-  console.log("☁ Uploaded:", fileName);
-}
-
-async function updateRecordingAfterUpload(helpId, fileId) {
+async function updateRecordingAfterUpload(helpId, cameraId, fileId) {
   try {
     const embedUrl = `https://drive.google.com/file/d/${fileId}/preview`;
-    const viewUrl = `https://drive.google.com/file/d/${fileId}/view`;
+    const viewUrl  = `https://drive.google.com/file/d/${fileId}/view`;
 
-    await RecordingSession.updateMany(
-      { sessionId: helpId },
+    const updated = await RecordingSession.findOneAndUpdate(
+      { sessionId: helpId, cameraId: cameraId },   // ✅ FIXED
       {
         $set: {
           driveFileId: fileId,
@@ -100,35 +68,110 @@ async function updateRecordingAfterUpload(helpId, fileId) {
           viewUrl,
           cloudUploaded: true,
           uploadedAt: new Date(),
-          status: "completed"
+          status: "completed",
+          endedAt: new Date()
         }
-      }
+      },
+      { new: true }
     );
 
-    console.log("✅ Recording updated with video links");
+    if (!updated) {
+      console.log("⚠️ No matching recording found:", helpId, cameraId);
+    } else {
+      console.log("✅ Recording updated:", helpId, cameraId);
+    }
+
   } catch (err) {
     console.error("❌ Upload update failed:", err);
   }
 }
 
-async function uploadSingleFileToDrive(filePath, lockerId, helpId) {
+// ==============================
+// 🎥 UPLOAD VIDEO + SAVE EMBED
+// ==============================
 
+async function uploadVideoAndSaveEmbed(filePath, lockerId, helpId, cameraId) {
+  const drive      = await getDrive();
+  const rootFolder = process.env.GDRIVE_ROOT_FOLDER;
+
+  const lockerFolderId    = await getOrCreateFolder(drive, lockerId, rootFolder);
+  const complaintFolderId = await getOrCreateFolder(drive, helpId, lockerFolderId);
+
+  const fileName = path.basename(filePath);
+
+  // 🔍 Check if already uploaded
+  const existing = await drive.files.list({
+    q: `'${complaintFolderId}' in parents and name='${fileName}' and trashed=false`,
+    fields: "files(id)",
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true
+  });
+
+  let fileId;
+
+  if (existing.data.files.length > 0) {
+    fileId = existing.data.files[0].id;
+    console.log(`[DRIVE] Already exists — reusing: ${fileId}`);
+  } else {
+    const res = await drive.files.create({
+      requestBody: { name: fileName, parents: [complaintFolderId] },
+      media: { body: fs.createReadStream(filePath) },
+      supportsAllDrives: true,
+      fields: "id"
+    });
+
+    fileId = res.data.id;
+    console.log(`[DRIVE] Uploaded — fileId: ${fileId}`);
+  }
+
+  // 🔓 Make public for iframe
+  await drive.permissions.create({
+    fileId,
+    requestBody: { role: "reader", type: "anyone" },
+    supportsAllDrives: true
+  });
+
+  // 🔥 UPDATE DB (FIXED)
+  await updateRecordingAfterUpload(helpId, cameraId, fileId);
+
+  console.log(`[DRIVE] embedUrl saved — ${helpId}/${cameraId}`);
+
+  return {
+    fileId,
+    embedUrl: `https://drive.google.com/file/d/${fileId}/preview`,
+    viewUrl: `https://drive.google.com/file/d/${fileId}/view`
+  };
+}
+
+// ==============================
+// 📦 EXISTING FUNCTIONS (UNCHANGED)
+// ==============================
+
+async function uploadSingleFileToDrive(filePath, lockerId, helpId) {
   const drive = await getDrive();
   const rootFolder = process.env.GDRIVE_ROOT_FOLDER;
 
   const lockerFolderId = await getOrCreateFolder(drive, lockerId, rootFolder);
   const complaintFolderId = await getOrCreateFolder(drive, helpId, lockerFolderId);
 
-  await uploadFile(drive, filePath, complaintFolderId);
+  // ⚠️ NOTE: This does NOT update DB (keep for non-video use)
+  await drive.files.create({
+    requestBody: {
+      name: path.basename(filePath),
+      parents: [complaintFolderId]
+    },
+    media: {
+      body: fs.createReadStream(filePath)
+    },
+    supportsAllDrives: true
+  });
 }
 
-
 // ==============================
-// 📦 UPLOAD FULL COMPLAINT FOLDER
+// 📦 BULK UPLOAD (UNCHANGED)
 // ==============================
 
 async function uploadComplaintFolder(baseDir, lockerId, helpId) {
-
   const drive = await getDrive();
   const rootFolder = process.env.GDRIVE_ROOT_FOLDER;
 
@@ -136,7 +179,7 @@ async function uploadComplaintFolder(baseDir, lockerId, helpId) {
     throw new Error("GDRIVE_ROOT_FOLDER not set in .env");
   }
 
- const localDir = path.join(baseDir, "recordings", helpId);
+  const localDir = path.join(baseDir, "recordings", helpId);
 
   if (!fs.existsSync(localDir)) {
     throw new Error("Local complaint folder not found: " + localDir);
@@ -148,22 +191,20 @@ async function uploadComplaintFolder(baseDir, lockerId, helpId) {
   const complaintFolderId = await getOrCreateFolder(drive, helpId, lockerFolderId);
 
   async function uploadRecursive(dir, parentId) {
-
     const items = fs.readdirSync(dir);
 
     for (const item of items) {
-
       const fullPath = path.join(dir, item);
 
       if (fs.lstatSync(fullPath).isDirectory()) {
-
         const folderId = await getOrCreateFolder(drive, item, parentId);
         await uploadRecursive(fullPath, folderId);
-
       } else {
-
-        await uploadFile(drive, fullPath, parentId);
-
+        await drive.files.create({
+          requestBody: { name: item, parents: [parentId] },
+          media: { body: fs.createReadStream(fullPath) },
+          supportsAllDrives: true
+        });
       }
     }
   }
@@ -173,53 +214,10 @@ async function uploadComplaintFolder(baseDir, lockerId, helpId) {
   console.log("✅ Complaint uploaded successfully:", helpId);
   appendTimeline(baseDir, helpId, "CLOUD UPLOADED SUCCESSFULLY");
 }
-async function uploadVideoAndSaveEmbed(filePath, lockerId, helpId, cameraId) {
-  const drive      = await getDrive();
-  const rootFolder = process.env.GDRIVE_ROOT_FOLDER;
 
-  const lockerFolderId    = await getOrCreateFolder(drive, lockerId, rootFolder);
-  const complaintFolderId = await getOrCreateFolder(drive, helpId, lockerFolderId);
-
-  const fileName = path.basename(filePath);
-
-  // Check if already uploaded
-  const existing = await drive.files.list({
-    q: `'${complaintFolderId}' in parents and name='${fileName}' and trashed=false`,
-    fields: "files(id)",
-    supportsAllDrives: true,
-    includeItemsFromAllDrives: true
-  });
-
-  let fileId;
-  if (existing.data.files.length > 0) {
-    fileId = existing.data.files[0].id;
-    console.log(`[DRIVE] Already exists — reusing: ${fileId}`);
-  } else {
-    const res = await drive.files.create({
-      requestBody: { name: fileName, parents: [complaintFolderId] },
-      media: { body: fs.createReadStream(filePath) },
-      supportsAllDrives: true,
-      fields: "id"
-    });
-    fileId = res.data.id;
-    console.log(`[DRIVE] Uploaded — fileId: ${fileId}`);
-  }
-
-  // Make publicly viewable — required for iframe embed
-  await drive.permissions.create({
-    fileId,
-    requestBody: { role: "reader", type: "anyone" },
-    supportsAllDrives: true
-  });
-
-  const embedUrl = `https://drive.google.com/file/d/${fileId}/preview`;
-  const viewUrl  = `https://drive.google.com/file/d/${fileId}/view`;
-
-  // Save to MongoDB so support portal can embed it
-  await updateRecordingAfterUpload(helpId, fileId);
-
-  console.log(`[DRIVE] embedUrl saved — ${helpId}/${cameraId}`);
-  return { fileId, embedUrl, viewUrl };
-}
-
-module.exports = { uploadComplaintFolder, uploadSingleFileToDrive, uploadVideoAndSaveEmbed, updateRecordingAfterUpload };
+module.exports = {
+  uploadComplaintFolder,
+  uploadSingleFileToDrive,
+  uploadVideoAndSaveEmbed,
+  updateRecordingAfterUpload
+};

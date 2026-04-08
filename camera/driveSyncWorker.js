@@ -1,10 +1,9 @@
 const fs = require("fs");
 const path = require("path");
 const RecordingSession = require("../models/RecordingSession");
-const { uploadComplaintFolder, uploadSingleFileToDrive } = require("./googleDriveUploader");
+const { uploadVideoAndSaveEmbed } = require("./googleDriveUploader");
 const { appendTimeline } = require("./timelineWriter");
 
-// 🔒 Prevent two syncs running simultaneously
 let syncInProgress = false;
 
 async function runDriveSync(baseDir, lockerId) {
@@ -14,7 +13,7 @@ async function runDriveSync(baseDir, lockerId) {
   }
 
   syncInProgress = true;
-  console.log("run drive sync entered");
+  console.log("🚀 Drive sync started");
 
   try {
     const sessions = await RecordingSession.find({
@@ -23,45 +22,69 @@ async function runDriveSync(baseDir, lockerId) {
     });
 
     for (const session of sessions) {
-      const helpId = session.sessionId;
-      const recordingsBase = path.join(baseDir, "recordings");
-      const localDir = path.join(recordingsBase, helpId);
+      const helpId   = session.sessionId;
+      const cameraId = session.cameraId;
 
-      // Folder already cleaned up — mark as uploaded silently
+      const recordingsBase = path.join(baseDir, "recordings");
+      const localDir       = path.join(recordingsBase, helpId);
+
       if (!fs.existsSync(localDir)) {
-        await RecordingSession.updateMany(
-          { sessionId: helpId },
-          { cloudUploaded: true, uploadedAt: new Date() }
-        );
+        console.log("⚠️ Folder missing, skipping:", helpId);
         continue;
       }
 
       try {
-        // ── Upload raw MP4s directly (no local compression) ──
         appendTimeline(recordingsBase, helpId, "CLOUD UPLOAD STARTED");
-        await uploadComplaintFolder(baseDir, lockerId, helpId);
-        appendTimeline(recordingsBase, helpId, "CLOUD UPLOAD SUCCESSFUL");
 
-        // ── Re-upload updated timeline ──
-        const timelinePath = path.join(localDir, "timeline.txt");
-        if (fs.existsSync(timelinePath)) {
-          await uploadSingleFileToDrive(timelinePath, lockerId, helpId);
+        const files = fs.readdirSync(localDir);
+
+        for (const file of files) {
+          if (!file.endsWith(".mp4")) continue;
+
+          // ✅ FIX: only upload the file that belongs to THIS session's cameraId
+          // Assumes files are named like cam1.mp4, cam2.mp4
+          // Adjust this check if your naming convention differs
+          if (!file.includes(cameraId)) {
+            console.log(`⏭ Skipping ${file} — doesn't match cameraId ${cameraId}`);
+            continue;
+          }
+
+          const fullPath = path.join(localDir, file);
+          console.log(`🎥 Uploading: ${fullPath} for ${cameraId}`);
+
+          await uploadVideoAndSaveEmbed(fullPath, lockerId, helpId, cameraId);
         }
 
-        // ── Mark uploaded and clean folder ──
-        await RecordingSession.updateMany(
-          { sessionId: helpId },
-          { cloudUploaded: true, uploadedAt: new Date() }
+        appendTimeline(recordingsBase, helpId, "CLOUD UPLOAD SUCCESSFUL");
+
+        // Belt-and-suspenders: mark uploaded even if uploader already did it
+        await RecordingSession.updateOne(
+          { sessionId: helpId, cameraId: cameraId },
+          { $set: { cloudUploaded: true, uploadedAt: new Date() } }
         );
 
-        fs.rmSync(localDir, { recursive: true, force: true });
-        console.log("☁ Uploaded & cleaned:", helpId);
+        // 🧹 Only clean the folder after ALL cameras for this helpId are uploaded.
+        // Check if any sibling sessions for the same helpId are still pending.
+        const pending = await RecordingSession.countDocuments({
+          sessionId: helpId,
+          cloudUploaded: { $ne: true }
+        });
+
+        if (pending === 0) {
+          fs.rmSync(localDir, { recursive: true, force: true });
+          console.log(`🗑 Cleaned local folder: ${helpId}`);
+        } else {
+          console.log(`📂 Keeping folder — ${pending} camera(s) still pending for ${helpId}`);
+        }
+
+        console.log(`☁ Uploaded: ${helpId} / ${cameraId}`);
 
       } catch (err) {
-        console.error("Upload failed:", helpId, err.message);
+        console.error(`❌ Upload failed: ${helpId} / ${cameraId}`, err.message);
         appendTimeline(recordingsBase, helpId, `UPLOAD ERROR: ${err.message}`);
       }
     }
+
   } finally {
     syncInProgress = false;
   }
