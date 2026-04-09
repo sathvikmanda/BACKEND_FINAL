@@ -48,7 +48,8 @@ const CAMERAS = [
 ];
 const { getCameraConfig } = require("./camera/recordingOrchestrator");
 const { activateRecording, deactivateRecording, stopAllRecordingsForSession } = require("./camera/recordingSessionManager");
-
+const RecordingSession = require("./models/RecordingSession");
+const { uploadVideoAndSaveEmbed } = require("./camera/googleDriveUploader");
 
 app.use(session({
   secret: "droppoint-2025",
