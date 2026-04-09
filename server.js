@@ -87,6 +87,7 @@ const connectDB = async () => {
     });
 
     console.log("✅ MongoDB connected");
+    console.log("DB:", mongoose.connection.name);
   } catch (err) {
     console.error("❌ Initial MongoDB connection failed:", err);
 
@@ -99,7 +100,6 @@ connectDB();
 
 app.use(cors()); // allow Flutter to talk
 app.use(express.json());
-
 
 const Otp = require("./models/Otp.js");
 const { GenerateOtp, hashOtp } = require("./utils/otp");

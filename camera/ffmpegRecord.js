@@ -4,22 +4,24 @@ import fs from "fs";
 
 const FFMPEG_PATH = "ffmpeg";
 
-export function recordClip({ rtspUrl, baseDir, helpId, type }) {
+export function recordClip({ rtspUrl, baseDir, helpId, cameraId, type }) {
   const recordingsDir = path.join(baseDir, "recordings");
   if (!fs.existsSync(recordingsDir)) fs.mkdirSync(recordingsDir);
 
-  const filename = `${type}_${helpId}_${Date.now()}.mp4`;
-  const outputPath = path.join(recordingsDir, filename);
+  // ✅ Create a subfolder per helpId
+  const helpDir = path.join(recordingsDir, helpId);
+  if (!fs.existsSync(helpDir)) fs.mkdirSync(helpDir);
 
-  console.log(" Recording", filename);
+  // ✅ Name the file after cameraId so the sync worker can match it
+  const filename = `${cameraId}.mp4`;
+  const outputPath = path.join(helpDir, filename);
+
+  console.log("Recording", filename);
 
   const p = spawn(FFMPEG_PATH, [
     "-rtsp_transport", "tcp",
     "-i", rtspUrl,
-
-    // ✅ NO encoding — just remux the stream
     "-c", "copy",
-
     "-t", "10",
     "-movflags", "+faststart",
     outputPath

@@ -52,13 +52,14 @@ async function spawnRecording(rtspUrl, baseDir, helpId, lockerId, cameraId) {
   activeSessions.set(key, { process: ffmpeg, outputFile });
 
   await RecordingSession.create({
-    sessionId: helpId,
-    helpId,
-    lockerId,
-    cameraId,
-    rawVideoFile: outputFile,
-    startedAt: new Date()
-  });
+  sessionId: helpId,
+  helpId,
+  lockerId,
+  cameraId,
+  rawVideoFile: outputFile,
+  status: "active",        // ✅ add this
+  startedAt: new Date()
+});
 }
 
 async function startRecording(baseDir, helpId, lockerId) {
