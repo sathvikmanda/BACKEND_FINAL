@@ -88,7 +88,6 @@ const connectDB = async () => {
     });
 
     console.log("✅ MongoDB connected");
-    console.log("DB:", mongoose.connection.name);
   } catch (err) {
     console.error("❌ Initial MongoDB connection failed:", err);
 
