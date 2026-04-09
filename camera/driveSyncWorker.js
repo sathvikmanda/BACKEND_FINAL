@@ -29,7 +29,6 @@ async function runDriveSync(baseDir, lockerId) {
       const localDir       = path.join(recordingsBase, helpId);
 
       if (!fs.existsSync(localDir)) {
-        console.log("⚠️ Folder missing, skipping:", helpId);
         continue;
       }
 
